@@ -588,7 +588,7 @@ function renderPlayerGrid() {
           <div class="player-card-header">
             <div>
               <h3>${escapeHtml(player.name)}</h3>
-              <p>${escapeHtml(player.role)} | Age ${player.age}</p>
+              <p>${escapeHtml(player.role)} | Jersey ${escapeHtml(player.jerseyNumber || "-")}</p>
             </div>
             ${statusBadge(player.status)}
           </div>
@@ -1981,7 +1981,6 @@ function playerSerialNumber(player) {
 
 function playerMeta(player) {
   return [
-    `Age ${player.age}`,
     player.jerseyNumber ? `Jersey ${player.jerseyNumber}` : "",
     player.contact ? `Contact ${player.contact}` : "",
   ]

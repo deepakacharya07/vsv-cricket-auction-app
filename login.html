@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Login | VSV Cricket Auction</title>
+    <link rel="icon" href="public/favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body data-page="login">
+    <main class="auth-page">
+      <section class="auth-shell">
+        <div class="auth-image">
+          <img
+            alt="Cricket ground under lights"
+            src="https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=1000&q=80"
+          />
+          <div class="stage-overlay"></div>
+          <div class="stage-caption">
+            <span class="eyebrow light">Admin access</span>
+            <h1>Control the auction table.</h1>
+            <p>
+              Sign in to start lots, add players, sell winners, mark unsold
+              players, and reset the local demo state.
+            </p>
+          </div>
+        </div>
+        <section class="auth-form-panel">
+          <a class="text-link" href="auction.html">Back to auction</a>
+          <h2>Admin login</h2>
+          <p>
+            This local build uses demo credentials. Replace this with Supabase
+            Auth before opening admin access to real users.
+          </p>
+          <div class="credential-box">
+            <strong>Demo credentials</strong>
+            <span>Email: admin@vsvauction.local</span>
+            <span>Password: admin123</span>
+          </div>
+          <form id="login-form" class="form-stack">
+            <label>
+              Email
+              <input
+                id="login-email"
+                autocomplete="username"
+                type="email"
+                value="admin@vsvauction.local"
+              />
+            </label>
+            <label>
+              Password
+              <input
+                id="login-password"
+                autocomplete="current-password"
+                type="password"
+                value="admin123"
+              />
+            </label>
+            <p id="login-error" class="form-error" role="alert"></p>
+            <button class="primary-button full" type="submit">Sign in</button>
+          </form>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

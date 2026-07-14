@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auction Admin | VSV Cricket Auction</title>
+    <link rel="icon" href="public/favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body data-page="admin">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="index.html" aria-label="VSV Auction home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>
+            <span class="eyebrow">Control room</span>
+            <strong>Auction Admin</strong>
+          </span>
+        </a>
+        <a class="header-center-logo" href="index.html" aria-label="VSV Auction home">
+          <img alt="VSV logo" src="public/vsv-logo.png" />
+        </a>
+        <nav class="nav">
+          <a class="nav-link" href="index.html">Players</a>
+          <a class="nav-link" href="auction.html">Auction</a>
+          <button class="nav-link" id="logout-button" type="button">
+            Logout
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main id="admin-root" class="admin-grid">
+      <section class="admin-column">
+        <section class="panel">
+          <h1 class="panel-heading">Active lot</h1>
+          <div id="admin-current-lot"></div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-heading">Auction settings</h2>
+          <form id="auction-settings-form" class="form-stack">
+            <div class="form-grid">
+              <label>
+                Default base price
+                <input id="settings-base-price" min="1" step="1" type="number" value="50" />
+              </label>
+              <label>
+                Bid increment
+                <input id="settings-bid-increment" min="1" step="1" type="number" value="50" />
+              </label>
+            </div>
+            <label>
+              Team purse
+              <input id="settings-team-purse" min="1" step="1" type="number" value="5000" />
+            </label>
+            <button class="secondary-button full" type="submit">Save settings</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-heading">Add player</h2>
+          <form id="add-player-form" class="form-stack">
+            <label>
+              Name
+              <input id="new-name" required />
+            </label>
+            <div class="form-grid">
+              <label>
+                Role
+                <select id="new-role">
+                  <option>Batter</option>
+                  <option>Bowler</option>
+                  <option>All-rounder</option>
+                  <option>Wicket keeper</option>
+                </select>
+              </label>
+              <label>
+                Base price
+                <input id="new-base-price" min="1" type="number" value="50" />
+              </label>
+            </div>
+            <div class="form-grid">
+              <label>
+                Batting style
+                <input id="new-batting" value="Right hand bat" />
+              </label>
+              <label>
+                Bowling style
+                <input id="new-bowling" value="Right arm medium" />
+              </label>
+            </div>
+            <div class="form-grid wide-last">
+              <label>
+                Age
+                <input id="new-age" min="16" type="number" value="24" />
+              </label>
+              <label>
+                Upload image
+                <input id="new-image-file" accept="image/*" type="file" />
+              </label>
+            </div>
+            <button class="primary-button full" type="submit">Add player</button>
+          </form>
+        </section>
+      </section>
+
+      <section class="admin-column">
+        <section>
+          <div class="section-heading">
+            <div>
+              <h2>Players</h2>
+              <p>Start lots and review current auction status.</p>
+            </div>
+            <button class="secondary-button" disabled id="admin-reset" title="Reset demo is disabled for now" type="button">
+              Reset demo
+            </button>
+          </div>
+          <div id="admin-player-table" class="data-table player-table"></div>
+        </section>
+
+        <section>
+          <h2 class="side-title">Team purse</h2>
+          <div id="admin-team-grid" class="team-summary-grid"></div>
+        </section>
+
+        <section>
+          <div class="section-heading">
+            <div>
+              <h2>Manage teams</h2>
+              <p>Add teams, edit owners, and remove unused teams.</p>
+            </div>
+          </div>
+          <div id="admin-team-editor"></div>
+        </section>
+      </section>
+    </main>
+
+    <dialog id="player-edit-dialog" class="edit-dialog">
+      <form id="player-edit-form" class="edit-dialog-card form-stack">
+        <div class="dialog-header">
+          <div>
+            <h2>Edit player</h2>
+            <p id="player-edit-status"></p>
+          </div>
+          <button class="secondary-button compact-button" data-player-edit-close type="button">
+            Close
+          </button>
+        </div>
+
+        <div class="player-edit-preview">
+          <img id="player-edit-image-preview" alt="" src="" />
+          <div>
+            <strong id="player-edit-preview-name">Player</strong>
+            <span>Choose a new image only if you want to replace the current one.</span>
+          </div>
+        </div>
+
+        <label>
+          Name
+          <input name="name" required />
+        </label>
+
+        <div class="form-grid">
+          <label>
+            Role
+            <select name="role">
+              <option>Batter</option>
+              <option>Bowler</option>
+              <option>All-rounder</option>
+              <option>Wicket keeper</option>
+            </select>
+          </label>
+          <label>
+            Base price
+            <input min="1" name="basePrice" required type="number" />
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Age
+            <input min="16" name="age" required type="number" />
+          </label>
+          <label>
+            Upload image
+            <input accept="image/*" name="imageFile" type="file" />
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Batting style
+            <input name="battingStyle" required />
+          </label>
+          <label>
+            Bowling style
+            <input name="bowlingStyle" required />
+          </label>
+        </div>
+
+        <div class="dialog-actions">
+          <button class="secondary-button" data-player-edit-close type="button">Cancel</button>
+          <button class="primary-button" type="submit">Save player</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

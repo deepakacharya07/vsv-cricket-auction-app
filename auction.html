@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VSV Cricket Auction</title>
+    <meta
+      name="description"
+      content="A cricket player auction board with teams, bids, and admin controls."
+    />
+    <link rel="icon" href="public/favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body data-page="auction">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="index.html" aria-label="VSV Auction home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>
+            <span class="eyebrow">Cricket player auction</span>
+            <strong>VSV Auction Room</strong>
+          </span>
+        </a>
+        <a class="header-center-logo" href="index.html" aria-label="VSV Auction home">
+          <img alt="VSV logo" src="public/vsv-logo.png" />
+        </a>
+        <nav class="nav">
+          <a class="nav-link" href="index.html">Players</a>
+          <a class="nav-link active" href="auction.html">Auction</a>
+          <a class="nav-link" href="admin.html">Admin</a>
+          <a class="nav-link" href="login.html">Login</a>
+        </nav>
+      </div>
+      <section class="metric-row" aria-label="Auction summary">
+        <article class="metric">
+          <span>Players sold</span>
+          <strong id="metric-sold">0</strong>
+        </article>
+        <article class="metric">
+          <span>Auction purse</span>
+          <strong id="metric-purse">INR 0</strong>
+        </article>
+        <article class="metric">
+          <span>Total spent</span>
+          <strong id="metric-spent">INR 0</strong>
+        </article>
+      </section>
+    </header>
+
+    <main class="auction-page">
+      <section class="auction-stage" aria-label="Current auction lot">
+        <div class="stage-image">
+          <img id="current-player-image" alt="Current cricket player" />
+          <div class="stage-overlay"></div>
+          <div class="stage-caption">
+            <span class="eyebrow light">Current lot</span>
+            <h1 id="current-player-name">Loading player</h1>
+            <p id="current-player-summary"></p>
+          </div>
+        </div>
+        <div class="stage-panel">
+          <div class="lot-metrics">
+            <article class="metric compact">
+              <span>Base price</span>
+              <strong id="current-base">INR 0</strong>
+            </article>
+            <article class="metric compact">
+              <span>Current bid</span>
+              <strong id="current-bid">INR 0</strong>
+            </article>
+            <article class="metric compact">
+              <span>Leading team</span>
+              <strong id="current-leading">Open</strong>
+            </article>
+          </div>
+          <div>
+            <h2 class="panel-title">Place bid as team</h2>
+            <div id="team-bid-buttons" class="team-bid-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="auction-support-grid" aria-label="Auction details">
+        <section class="teams-column">
+          <h2 class="side-title">Teams</h2>
+          <div id="team-list" class="stack"></div>
+        </section>
+        <section class="next-panel">
+          <h2 class="side-title">Next available</h2>
+          <div id="next-players" class="stack tight"></div>
+        </section>
+        <section>
+          <h2 class="side-title">Recent bids</h2>
+          <div id="recent-bids" class="activity-list"></div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

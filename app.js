@@ -256,6 +256,12 @@ let currentUserIsAdmin = false;
 let adminEventsBound = false;
 let auctionEventsBound = false;
 let realtimeRefreshTimer = null;
+const adminPlayerSearchTerms = {
+  available: "",
+  unsold: "",
+  sold: "",
+};
+const adminPlayerRandomOrder = new Map();
 
 document.addEventListener("DOMContentLoaded", () => {
   void bootstrapApp();
@@ -355,7 +361,9 @@ async function loadRemoteState() {
   throwIfSupabaseError(playersResult.error);
   throwIfSupabaseError(bidsResult.error);
 
-  const players = (playersResult.data ?? []).map(dbPlayerToState);
+  const players = (playersResult.data ?? [])
+    .map(dbPlayerToState)
+    .sort((a, b) => Number(a.playerNumber ?? 0) - Number(b.playerNumber ?? 0));
   const inBidding = players.find((player) => player.status === "in_bidding");
 
   state = {
@@ -465,14 +473,24 @@ function renderAuctionBoard() {
   setText("metric-purse", formatMoney(totalPurse));
   setText("metric-spent", formatMoney(totalSpent));
   setText("current-player-name", currentPlayer?.name ?? "No active player");
-  setText(
-    "current-player-summary",
-    currentPlayer
-      ? `${currentPlayer.role} | ${currentPlayer.battingStyle} | ${currentPlayer.bowlingStyle}`
-      : currentUserIsAdmin
+
+  const currentSummary = document.getElementById("current-player-summary");
+  if (currentSummary) {
+    if (currentPlayer) {
+      currentSummary.textContent = `${currentPlayer.role} | ${currentPlayer.battingStyle} | ${currentPlayer.bowlingStyle}`;
+    } else {
+      currentSummary.textContent = currentUserIsAdmin
         ? "Start the next player from the admin page or choose one below."
-        : "Waiting for an admin to start the next player."
-  );
+        : "Waiting for an admin to start the next player.";
+    }
+  }
+
+  const currentPlayerIdBadge = document.getElementById("current-player-id-badge");
+  if (currentPlayerIdBadge) {
+    currentPlayerIdBadge.textContent = currentPlayer ? playerSerial(currentPlayer) : "";
+    currentPlayerIdBadge.hidden = !currentPlayer;
+  }
+
   setText("current-base", formatMoney(currentPlayer?.basePrice ?? 0));
   setText("current-bid", formatMoney(currentPlayer?.currentBid ?? 0));
   setText("current-leading", leadingTeam?.name ?? "Open");
@@ -510,17 +528,22 @@ function renderAuctionActionState() {
 }
 
 function renderTeamBidButtons(currentPlayer) {
-  const root = document.getElementById("team-bid-buttons");
-  if (!root) {
+  const roots = ["team-bid-buttons", "admin-team-bid-buttons"]
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
+
+  if (!roots.length) {
     return;
   }
 
   if (!currentPlayer) {
-    root.innerHTML = `<p class="empty-state">No player is currently open for bidding.</p>`;
+    roots.forEach((root) => {
+      root.innerHTML = `<p class="empty-state">No player is currently open for bidding.</p>`;
+    });
     return;
   }
 
-  root.innerHTML = state.teams
+  const markup = state.teams
     .map((team) => {
       const remaining = team.purse - team.spent;
       const nextBid = getNextBidAmount(currentPlayer);
@@ -544,6 +567,10 @@ function renderTeamBidButtons(currentPlayer) {
       `;
     })
     .join("");
+
+  roots.forEach((root) => {
+    root.innerHTML = markup;
+  });
 }
 
 function renderPlayerGrid() {
@@ -553,10 +580,10 @@ function renderPlayerGrid() {
   }
 
   root.innerHTML = state.players
-    .slice(0, 12)
     .map(
       (player) => `
         <article class="player-card">
+          <span class="serial-badge">${escapeHtml(playerSerial(player))}</span>
           <img alt="${escapeAttr(player.name)}" src="${escapeAttr(player.imageUrl)}" />
           <div class="player-card-header">
             <div>
@@ -621,9 +648,7 @@ function renderNextPlayers() {
     return;
   }
 
-  const available = state.players
-    .filter((player) => player.status === "available")
-    .slice(0, 4);
+  const available = state.players.filter((player) => player.status === "available");
 
   if (!available.length) {
     root.innerHTML = `<p class="empty-state">No available players remain.</p>`;
@@ -633,10 +658,7 @@ function renderNextPlayers() {
   root.innerHTML = available
     .map(
       (player) => `
-        <div class="next-player-button passive">
-          <strong>${escapeHtml(player.name)}</strong>
-          <span>${formatMoney(player.basePrice)}</span>
-        </div>
+        <span class="available-player-name">${escapeHtml(player.name)}</span>
       `
     )
     .join("");
@@ -770,6 +792,7 @@ async function renderAdminPage() {
   }
 
   renderAdminCurrentLot();
+  renderTeamBidButtons(getCurrentPlayer());
   renderAuctionSettings();
   renderAdminPlayerTable();
   renderAdminTeams();
@@ -826,17 +849,18 @@ function renderAdminCurrentLot() {
   root.innerHTML = `
     <div class="active-lot">
       <img alt="${escapeAttr(currentPlayer.name)}" src="${escapeAttr(currentPlayer.imageUrl)}" />
-      <div>
+      <div class="active-lot-info">
+        <span class="serial-badge inline">${escapeHtml(playerSerial(currentPlayer))}</span>
         <h2>${escapeHtml(currentPlayer.name)}</h2>
         <p>${escapeHtml(currentPlayer.role)} | ${escapeHtml(currentPlayer.battingStyle)}</p>
         <strong class="activity-amount">${formatMoney(currentPlayer.currentBid)}</strong>
         <p>Leading: ${escapeHtml(leadingTeam?.name ?? "No bid yet")}</p>
       </div>
-    </div>
-    <div class="lot-actions">
-      <button class="primary-button" id="sell-player" ${currentPlayer.currentTeamId ? "" : "disabled"} type="button">Sell player</button>
-      <button class="secondary-button" id="make-player-available" type="button">Stop bidding</button>
-      <button class="danger-button" id="mark-unsold" type="button">Mark unsold</button>
+      <div class="lot-actions">
+        <button class="primary-button" id="sell-player" ${currentPlayer.currentTeamId ? "" : "disabled"} type="button">Sell player</button>
+        <button class="secondary-button" id="make-player-available" type="button">Stop bidding</button>
+        <button class="danger-button" id="mark-unsold" type="button">Mark unsold</button>
+      </div>
     </div>
   `;
 }
@@ -847,25 +871,177 @@ function renderAdminPlayerTable() {
     return;
   }
 
-  root.innerHTML = `
-    <div class="data-table-inner">
-      <div class="data-row player-data-row header">
-        <span>Player</span>
-        <span>Role</span>
-        <span>Base</span>
-        <span>Bid</span>
-        <span>Status</span>
-        <span>Action</span>
+  const playerGroups = [
+    {
+      key: "available",
+      title: "Available / In bidding",
+      description: "Players ready to start or currently open for bidding.",
+      emptyMessage: "No available or in-bidding players.",
+      order: "in_bidding_first",
+      players: state.players.filter((player) =>
+        ["available", "in_bidding"].includes(player.status)
+      ),
+    },
+    {
+      key: "unsold",
+      title: "Marked unsold",
+      description: "Players marked as unsold.",
+      emptyMessage: "No players are marked unsold.",
+      players: state.players.filter((player) => player.status === "unsold"),
+    },
+    {
+      key: "sold",
+      title: "Sold",
+      description: "Players already sold to teams.",
+      emptyMessage: "No players have been sold yet.",
+      order: "id",
+      players: state.players.filter((player) => player.status === "sold"),
+    },
+  ];
+
+  root.innerHTML = playerGroups.map(renderAdminPlayerGroup).join("");
+}
+
+function renderAdminPlayerGroup(group) {
+  const query = adminPlayerSearchTerms[group.key] ?? "";
+  const filteredPlayers = filterAdminPlayers(group.players, query);
+  const players = orderAdminPlayerGroup({ ...group, players: filteredPlayers });
+  const visibleCount = filteredPlayers.length;
+  const countLabel = query ? `${visibleCount}/${group.players.length}` : String(group.players.length);
+  const emptyMessage = query ? "No players match your search." : group.emptyMessage;
+
+  return `
+    <section class="player-list-section">
+      <div class="player-list-heading">
+        <div>
+          <h3>${escapeHtml(group.title)}</h3>
+          <p>${escapeHtml(group.description)}</p>
+        </div>
+        <div class="player-list-tools">
+          <label class="player-search-field">
+            <span>Search</span>
+            <input
+              aria-label="Search ${escapeAttr(group.title)}"
+              data-admin-player-search="${escapeAttr(group.key)}"
+              placeholder="Search players"
+              type="search"
+              value="${escapeAttr(query)}"
+            />
+          </label>
+          <span>${escapeHtml(countLabel)}</span>
+        </div>
       </div>
-      ${state.players
+      ${renderAdminPlayerRows(players, emptyMessage)}
+    </section>
+  `;
+}
+
+function orderAdminPlayerGroup(group) {
+  if (group.order === "id") {
+    return sortPlayersById(group.players);
+  }
+
+  if (group.order === "in_bidding_first") {
+    return [
+      ...sortPlayersByAdminRandomOrder(
+        group.players.filter((player) => player.status === "in_bidding")
+      ),
+      ...sortPlayersByAdminRandomOrder(
+        group.players.filter((player) => player.status !== "in_bidding")
+      ),
+    ];
+  }
+
+  return sortPlayersByAdminRandomOrder(group.players);
+}
+
+function filterAdminPlayers(players, query) {
+  const terms = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!terms.length) {
+    return players;
+  }
+
+  return players.filter((player) => {
+    const searchText = adminPlayerSearchText(player);
+    return terms.every((term) => searchText.includes(term));
+  });
+}
+
+function adminPlayerSearchText(player) {
+  const team = findTeam(player.currentTeamId) ?? findTeam(player.soldTeamId);
+
+  return [
+    playerSerialNumber(player),
+    player.id,
+    player.name,
+    player.role,
+    player.battingStyle,
+    player.bowlingStyle,
+    player.age,
+    player.basePrice,
+    player.currentBid,
+    player.status,
+    player.status.replace("_", " "),
+    player.contact,
+    player.jerseyNumber,
+    team?.name,
+    team?.owner,
+  ]
+    .filter((value) => value !== undefined && value !== null && value !== "")
+    .join(" ")
+    .toLowerCase();
+}
+
+function sortPlayersByAdminRandomOrder(players) {
+  return [...players].sort(
+    (first, second) => adminPlayerRandomRank(first) - adminPlayerRandomRank(second)
+  );
+}
+
+function adminPlayerRandomRank(player) {
+  if (!adminPlayerRandomOrder.has(player.id)) {
+    adminPlayerRandomOrder.set(player.id, Math.random());
+  }
+
+  return adminPlayerRandomOrder.get(player.id);
+}
+
+function renderAdminPlayerRows(players, emptyMessage) {
+  if (!players.length) {
+    return `
+      <div class="data-table player-table player-table-empty">
+        <p class="empty-state">${escapeHtml(emptyMessage)}</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="data-table player-table">
+      <div class="data-table-inner">
+        <div class="data-row player-data-row header">
+          <span>ID</span>
+          <span>Player</span>
+          <span>Role</span>
+          <span>Base</span>
+          <span>Bid</span>
+          <span>Status</span>
+          <span>Action</span>
+        </div>
+      ${players
         .map(
           (player) => `
             <div class="data-row player-data-row">
+              <span class="serial-cell mobile-field" data-label="ID">${escapeHtml(playerSerialNumber(player))}</span>
               <span class="player-cell">
                 <img alt="${escapeAttr(player.name)}" src="${escapeAttr(player.imageUrl)}" />
                 <span>
                   <strong>${escapeHtml(player.name)}</strong>
-                  <small>Age ${escapeHtml(player.age)}</small>
+                  <small>${escapeHtml(playerMeta(player))}</small>
                 </span>
               </span>
               <span class="mobile-field" data-label="Role">${escapeHtml(player.role)}</span>
@@ -880,6 +1056,7 @@ function renderAdminPlayerTable() {
           `
         )
         .join("")}
+      </div>
     </div>
   `;
 }
@@ -901,6 +1078,8 @@ function showPlayerEditDialog(playerId) {
   setPlayerEditFormValue(form, "age", player.age);
   setPlayerEditFormValue(form, "battingStyle", player.battingStyle);
   setPlayerEditFormValue(form, "bowlingStyle", player.bowlingStyle);
+  setPlayerEditFormValue(form, "contact", player.contact);
+  setPlayerEditFormValue(form, "jerseyNumber", player.jerseyNumber);
 
   const imageInput = form.elements.namedItem("imageFile");
   if (imageInput instanceof HTMLInputElement) {
@@ -944,6 +1123,64 @@ function showPlayerEditDialog(playerId) {
 function closePlayerEditDialog() {
   const dialog = document.getElementById("player-edit-dialog");
   const form = document.getElementById("player-edit-form");
+  const canCloseDialog =
+    typeof HTMLDialogElement !== "undefined" &&
+    dialog instanceof HTMLDialogElement &&
+    typeof dialog.close === "function";
+
+  if (canCloseDialog && dialog.open) {
+    dialog.close();
+  } else {
+    dialog?.removeAttribute("open");
+  }
+
+  if (form instanceof HTMLFormElement) {
+    form.reset();
+    delete form.dataset.playerId;
+  }
+}
+
+function showStopBiddingDialog(playerId) {
+  const player = findPlayer(playerId);
+  const team = player?.currentTeamId ? findTeam(player.currentTeamId) : undefined;
+  const dialog = document.getElementById("stop-bidding-dialog");
+  const form = document.getElementById("stop-bidding-form");
+
+  if (!player || !(form instanceof HTMLFormElement)) {
+    return;
+  }
+
+  form.dataset.playerId = player.id;
+  setText("stop-bidding-player-name", player.name);
+  setText(
+    "stop-bidding-player-status",
+    `Current bid ${formatMoney(player.currentBid)} | Leading ${team?.name ?? "No bid yet"}`
+  );
+
+  const canShowModal =
+    typeof HTMLDialogElement !== "undefined" &&
+    dialog instanceof HTMLDialogElement &&
+    typeof dialog.showModal === "function";
+
+  if (canShowModal) {
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+  } else {
+    dialog?.setAttribute("open", "");
+  }
+
+  window.setTimeout(() => {
+    const confirmButton = form.querySelector("button[type='submit']");
+    if (confirmButton instanceof HTMLButtonElement) {
+      confirmButton.focus();
+    }
+  }, 0);
+}
+
+function closeStopBiddingDialog() {
+  const dialog = document.getElementById("stop-bidding-dialog");
+  const form = document.getElementById("stop-bidding-form");
   const canCloseDialog =
     typeof HTMLDialogElement !== "undefined" &&
     dialog instanceof HTMLDialogElement &&
@@ -1064,10 +1301,15 @@ function bindAdminEvents() {
 
   document.addEventListener("click", (event) => {
     const target = event.target.closest(
-      "#logout-button, #admin-reset, #sell-player, #make-player-available, #mark-unsold, [data-admin-start], [data-player-edit], [data-player-edit-close], [data-team-delete]"
+      "#logout-button, #admin-reset, #sell-player, #make-player-available, #mark-unsold, [data-admin-tab], [data-bid-team], [data-admin-start], [data-player-edit], [data-player-edit-close], [data-stop-bidding-close], [data-team-delete]"
     );
 
     if (!target) {
+      return;
+    }
+
+    if (target.dataset.adminTab) {
+      setAdminTab(target.dataset.adminTab);
       return;
     }
 
@@ -1100,7 +1342,20 @@ function bindAdminEvents() {
     if (target.id === "make-player-available") {
       const currentPlayer = getCurrentPlayer();
       if (currentPlayer) {
-        void runAction(() => makePlayerAvailable(currentPlayer.id));
+        showStopBiddingDialog(currentPlayer.id);
+      }
+      return;
+    }
+
+    if (target.dataset.stopBiddingClose !== undefined) {
+      closeStopBiddingDialog();
+      return;
+    }
+
+    if (target.dataset.bidTeam) {
+      const currentPlayer = getCurrentPlayer();
+      if (currentPlayer) {
+        void runAction(() => placeBid(currentPlayer.id, target.dataset.bidTeam));
       }
       return;
     }
@@ -1138,6 +1393,27 @@ function bindAdminEvents() {
     updatePlayerEditImagePreview(input);
   });
 
+  document.addEventListener("input", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.dataset.adminPlayerSearch) {
+      return;
+    }
+
+    const searchKey = input.dataset.adminPlayerSearch;
+    const cursorPosition = input.selectionStart ?? input.value.length;
+    adminPlayerSearchTerms[searchKey] = input.value;
+    renderAdminPlayerTable();
+
+    const nextInput = [...document.querySelectorAll("[data-admin-player-search]")].find(
+      (element) =>
+        element instanceof HTMLInputElement && element.dataset.adminPlayerSearch === searchKey
+    );
+    if (nextInput instanceof HTMLInputElement) {
+      nextInput.focus();
+      nextInput.setSelectionRange(cursorPosition, cursorPosition);
+    }
+  });
+
   document.addEventListener("submit", (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) {
@@ -1166,6 +1442,8 @@ function bindAdminEvents() {
           battingStyle: valueOf("new-batting"),
           bowlingStyle: valueOf("new-bowling"),
           age: Number(valueOf("new-age")),
+          contact: valueOf("new-contact"),
+          jerseyNumber: valueOf("new-jersey-number"),
           imageUrl: await imageValue("new-image-file", DEFAULT_PLAYER_IMAGE_URL),
         });
         form.reset();
@@ -1201,6 +1479,8 @@ function bindAdminEvents() {
           age: positiveNumberFromForm(form, "age", "Age"),
           battingStyle: namedValue(form, "battingStyle"),
           bowlingStyle: namedValue(form, "bowlingStyle"),
+          contact: namedValue(form, "contact"),
+          jerseyNumber: namedValue(form, "jerseyNumber"),
           imageUrl: await imageValueFromForm(
             form,
             "imageFile",
@@ -1208,6 +1488,19 @@ function bindAdminEvents() {
           ),
         });
         closePlayerEditDialog();
+      });
+      return;
+    }
+
+    if (form.id === "stop-bidding-form") {
+      event.preventDefault();
+      void runAction(async () => {
+        const playerId = form.dataset.playerId;
+        if (!playerId) {
+          throw new Error("No active player selected for stop bidding.");
+        }
+        await makePlayerAvailable(playerId);
+        closeStopBiddingDialog();
       });
       return;
     }
@@ -1461,14 +1754,6 @@ async function makePlayerAvailable(playerId) {
     throw new Error("Admin login required to stop bidding.");
   }
 
-  if (
-    !window.confirm(
-      "Stop bidding for this player and make them available again? Current bids for this lot will be cleared."
-    )
-  ) {
-    return;
-  }
-
   if (supabaseClient) {
     await rpc("make_player_available", { p_player_id: playerId });
     await loadRemoteState();
@@ -1525,15 +1810,18 @@ async function addPlayer(player) {
       p_age: player.age,
       p_base_price: player.basePrice,
       p_image_url: player.imageUrl,
+      p_contact: player.contact,
+      p_jersey_number: player.jerseyNumber,
     });
     await loadRemoteState();
     renderCurrentPage();
     return;
   }
 
-  state.players.unshift({
+  state.players.push({
     ...player,
     id: makeId("player"),
+    playerNumber: nextPlayerNumber(),
     currentBid: player.basePrice,
     status: "available",
   });
@@ -1552,6 +1840,8 @@ async function updatePlayer(playerId, player) {
       p_age: player.age,
       p_base_price: player.basePrice,
       p_image_url: player.imageUrl,
+      p_contact: player.contact,
+      p_jersey_number: player.jerseyNumber,
     });
     await loadRemoteState();
     renderCurrentPage();
@@ -1679,6 +1969,42 @@ function findPlayer(playerId) {
   return state.players.find((player) => player.id === playerId);
 }
 
+function playerSerial(player) {
+  return playerSerialNumber(player);
+}
+
+function playerSerialNumber(player) {
+  const index = state.players.findIndex((existingPlayer) => existingPlayer.id === player.id);
+  const serial = Number(player.playerNumber ?? (index >= 0 ? index + 1 : 0));
+  return String(serial).padStart(2, "0");
+}
+
+function playerMeta(player) {
+  return [
+    `Age ${player.age}`,
+    player.jerseyNumber ? `Jersey ${player.jerseyNumber}` : "",
+    player.contact ? `Contact ${player.contact}` : "",
+  ]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function sortPlayersById(players) {
+  return [...players].sort((first, second) => playerSortId(first) - playerSortId(second));
+}
+
+function playerSortId(player) {
+  const index = state.players.findIndex((existingPlayer) => existingPlayer.id === player.id);
+  return Number(player.playerNumber ?? (index >= 0 ? index + 1 : 0));
+}
+
+function nextPlayerNumber() {
+  return state.players.reduce((max, player, index) => {
+    const serial = Number(player.playerNumber ?? index + 1);
+    return Number.isFinite(serial) ? Math.max(max, serial) : max;
+  }, 0) + 1;
+}
+
 function findTeam(teamId) {
   return state.teams.find((team) => team.id === teamId);
 }
@@ -1749,8 +2075,11 @@ function dbTeamToState(row) {
 }
 
 function dbPlayerToState(row) {
+  const displayPlayerId = row.player_id ?? row.player_number;
+
   return {
     id: row.id,
+    playerNumber: displayPlayerId == null ? undefined : Number(displayPlayerId),
     name: row.name,
     role: row.role,
     battingStyle: row.batting_style,
@@ -1758,6 +2087,8 @@ function dbPlayerToState(row) {
     age: Number(row.age),
     basePrice: Number(row.base_price),
     currentBid: Number(row.current_bid),
+    contact: row.contact ?? "",
+    jerseyNumber: row.jersey_number ?? "",
     currentTeamId: row.current_team_id ?? undefined,
     soldTeamId: row.sold_team_id ?? undefined,
     status: row.status,
@@ -1789,6 +2120,21 @@ function formatTime(value) {
   return new Date(value).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+function setAdminTab(tabName) {
+  const tabs = document.querySelectorAll("[data-admin-tab]");
+  const panels = document.querySelectorAll("[data-admin-panel]");
+
+  tabs.forEach((tab) => {
+    const isActive = tab.dataset.adminTab === tabName;
+    tab.setAttribute("aria-selected", String(isActive));
+    tab.tabIndex = isActive ? 0 : -1;
+  });
+
+  panels.forEach((panel) => {
+    panel.hidden = panel.dataset.adminPanel !== tabName;
   });
 }
 
@@ -1878,8 +2224,18 @@ function normalizeAuctionState(next) {
     bidIncrement: Number(next.bidIncrement ?? DEFAULT_BID_INCREMENT),
     defaultBasePrice: Number(next.defaultBasePrice ?? DEFAULT_BASE_PRICE),
     teams: Array.isArray(next.teams) ? next.teams : clone(seedState.teams),
-    players: Array.isArray(next.players) ? next.players : clone(seedState.players),
+    players: Array.isArray(next.players)
+      ? next.players.map(normalizePlayer)
+      : clone(seedState.players).map(normalizePlayer),
     bids: Array.isArray(next.bids) ? next.bids : clone(seedState.bids),
+  };
+}
+
+function normalizePlayer(player) {
+  return {
+    ...player,
+    contact: player.contact ?? "",
+    jerseyNumber: player.jerseyNumber ?? "",
   };
 }
 

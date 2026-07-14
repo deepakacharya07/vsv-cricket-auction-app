@@ -33,108 +33,170 @@
       </div>
     </header>
 
-    <main id="admin-root" class="admin-grid">
-      <section class="admin-column">
-        <section class="panel">
-          <h1 class="panel-heading">Active lot</h1>
-          <div id="admin-current-lot"></div>
+    <main id="admin-root" class="admin-shell">
+      <div class="admin-tabs" role="tablist" aria-label="Admin sections">
+        <button
+          class="admin-tab"
+          id="admin-tab-auction"
+          data-admin-tab="auction"
+          role="tab"
+          aria-controls="admin-panel-auction"
+          aria-selected="true"
+          type="button"
+        >
+          Auction
+        </button>
+        <button
+          class="admin-tab"
+          id="admin-tab-setup"
+          data-admin-tab="setup"
+          role="tab"
+          aria-controls="admin-panel-setup"
+          aria-selected="false"
+          tabindex="-1"
+          type="button"
+        >
+          Setup
+        </button>
+      </div>
+
+      <section
+        class="admin-tab-panel admin-auction-tab"
+        id="admin-panel-auction"
+        data-admin-panel="auction"
+        role="tabpanel"
+        aria-labelledby="admin-tab-auction"
+      >
+        <section class="admin-auction-control-row">
+          <section class="panel">
+            <h1 class="panel-heading">Active lot</h1>
+            <div id="admin-current-lot"></div>
+          </section>
+
+          <section class="panel admin-bid-panel">
+            <h2 class="panel-heading">Place bid as team</h2>
+            <div id="admin-team-bid-buttons" class="team-bid-grid"></div>
+          </section>
+        </section>
+
+        <section class="admin-player-row">
+          <section>
+            <div class="section-heading">
+              <div>
+                <h2>Players</h2>
+                <p>Start lots and review current auction status.</p>
+              </div>
+              <button class="secondary-button" disabled id="admin-reset" title="Reset demo is disabled for now" type="button">
+                Reset demo
+              </button>
+            </div>
+            <div id="admin-player-table" class="player-table-groups"></div>
+          </section>
         </section>
 
         <section class="panel">
-          <h2 class="panel-heading">Auction settings</h2>
-          <form id="auction-settings-form" class="form-stack">
-            <div class="form-grid">
-              <label>
-                Default base price
-                <input id="settings-base-price" min="1" step="1" type="number" value="50" />
-              </label>
-              <label>
-                Bid increment
-                <input id="settings-bid-increment" min="1" step="1" type="number" value="50" />
-              </label>
-            </div>
-            <label>
-              Team purse
-              <input id="settings-team-purse" min="1" step="1" type="number" value="5000" />
-            </label>
-            <button class="secondary-button full" type="submit">Save settings</button>
-          </form>
-        </section>
-
-        <section class="panel">
-          <h2 class="panel-heading">Add player</h2>
-          <form id="add-player-form" class="form-stack">
-            <label>
-              Name
-              <input id="new-name" required />
-            </label>
-            <div class="form-grid">
-              <label>
-                Role
-                <select id="new-role">
-                  <option>Batter</option>
-                  <option>Bowler</option>
-                  <option>All-rounder</option>
-                  <option>Wicket keeper</option>
-                </select>
-              </label>
-              <label>
-                Base price
-                <input id="new-base-price" min="1" type="number" value="50" />
-              </label>
-            </div>
-            <div class="form-grid">
-              <label>
-                Batting style
-                <input id="new-batting" value="Right hand bat" />
-              </label>
-              <label>
-                Bowling style
-                <input id="new-bowling" value="Right arm medium" />
-              </label>
-            </div>
-            <div class="form-grid wide-last">
-              <label>
-                Age
-                <input id="new-age" min="16" type="number" value="24" />
-              </label>
-              <label>
-                Upload image
-                <input id="new-image-file" accept="image/*" type="file" />
-              </label>
-            </div>
-            <button class="primary-button full" type="submit">Add player</button>
-          </form>
-        </section>
-      </section>
-
-      <section class="admin-column">
-        <section>
-          <div class="section-heading">
-            <div>
-              <h2>Players</h2>
-              <p>Start lots and review current auction status.</p>
-            </div>
-            <button class="secondary-button" disabled id="admin-reset" title="Reset demo is disabled for now" type="button">
-              Reset demo
-            </button>
-          </div>
-          <div id="admin-player-table" class="data-table player-table"></div>
-        </section>
-
-        <section>
           <h2 class="side-title">Team purse</h2>
           <div id="admin-team-grid" class="team-summary-grid"></div>
         </section>
+      </section>
 
-        <section>
-          <div class="section-heading">
-            <div>
-              <h2>Manage teams</h2>
-              <p>Add teams, edit owners, and remove unused teams.</p>
+      <section
+        class="admin-tab-panel admin-grid"
+        id="admin-panel-setup"
+        data-admin-panel="setup"
+        role="tabpanel"
+        aria-labelledby="admin-tab-setup"
+        hidden
+      >
+        <section class="admin-column">
+          <section class="panel">
+            <h2 class="panel-heading">Auction settings</h2>
+            <form id="auction-settings-form" class="form-stack">
+              <div class="form-grid">
+                <label>
+                  Default base price
+                  <input id="settings-base-price" min="1" step="1" type="number" value="50" />
+                </label>
+                <label>
+                  Bid increment
+                  <input id="settings-bid-increment" min="1" step="1" type="number" value="50" />
+                </label>
+              </div>
+              <label>
+                Team purse
+                <input id="settings-team-purse" min="1" step="1" type="number" value="5000" />
+              </label>
+              <button class="secondary-button full" type="submit">Save settings</button>
+            </form>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel-heading">Add player</h2>
+            <form id="add-player-form" class="form-stack">
+              <label>
+                Name
+                <input id="new-name" required />
+              </label>
+              <div class="form-grid">
+                <label>
+                  Role
+                  <select id="new-role">
+                    <option>Batter</option>
+                    <option>Bowler</option>
+                    <option>All-rounder</option>
+                    <option>Wicket keeper</option>
+                  </select>
+                </label>
+                <label>
+                  Base price
+                  <input id="new-base-price" min="1" type="number" value="50" />
+                </label>
+              </div>
+              <div class="form-grid">
+                <label>
+                  Batting style
+                  <input id="new-batting" value="Right hand bat" />
+                </label>
+                <label>
+                  Bowling style
+                  <input id="new-bowling" value="Right arm fast" />
+                </label>
+              </div>
+              <div class="form-grid wide-last">
+                <label>
+                  Age
+                  <input id="new-age" min="16" type="number" value="24" />
+                </label>
+                <label>
+                  Upload image
+                  <input id="new-image-file" accept="image/*" type="file" />
+                </label>
+              </div>
+              <div class="form-grid">
+                <label>
+                  Contact number
+                  <input id="new-contact" inputmode="tel" />
+                </label>
+                <label>
+                  Jersey number
+                  <input id="new-jersey-number" inputmode="numeric" />
+                </label>
+              </div>
+              <button class="primary-button full" type="submit">Add player</button>
+            </form>
+          </section>
+        </section>
+
+        <section class="admin-column">
+          <section>
+            <div class="section-heading">
+              <div>
+                <h2>Manage teams</h2>
+                <p>Add teams, edit owners, and remove unused teams.</p>
+              </div>
             </div>
-          </div>
-          <div id="admin-team-editor"></div>
+            <div id="admin-team-editor"></div>
+          </section>
         </section>
       </section>
     </main>
@@ -202,9 +264,44 @@
           </label>
         </div>
 
+        <div class="form-grid">
+          <label>
+            Contact number
+            <input inputmode="tel" name="contact" />
+          </label>
+          <label>
+            Jersey number
+            <input inputmode="numeric" name="jerseyNumber" />
+          </label>
+        </div>
+
         <div class="dialog-actions">
           <button class="secondary-button" data-player-edit-close type="button">Cancel</button>
           <button class="primary-button" type="submit">Save player</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="stop-bidding-dialog" class="edit-dialog confirm-dialog">
+      <form id="stop-bidding-form" class="edit-dialog-card form-stack">
+        <div class="dialog-header">
+          <div>
+            <h2>Stop bidding?</h2>
+            <p>This will move the player back to available and clear bids for this lot.</p>
+          </div>
+          <button class="secondary-button compact-button" data-stop-bidding-close type="button">
+            Close
+          </button>
+        </div>
+
+        <div class="confirmation-summary">
+          <strong id="stop-bidding-player-name">Player</strong>
+          <span id="stop-bidding-player-status"></span>
+        </div>
+
+        <div class="dialog-actions">
+          <button class="secondary-button" data-stop-bidding-close type="button">Cancel</button>
+          <button class="danger-button" type="submit">Stop bidding</button>
         </div>
       </form>
     </dialog>

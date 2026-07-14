@@ -48,6 +48,7 @@ alter table public.teams
 
 create table if not exists public.players (
   id uuid primary key default gen_random_uuid(),
+  player_id integer not null unique,
   name text not null,
   role text not null check (
     role in ('Batter', 'Bowler', 'All-rounder', 'Wicket keeper')
@@ -55,6 +56,8 @@ create table if not exists public.players (
   batting_style text not null,
   bowling_style text not null,
   age integer not null check (age >= 16),
+  contact text,
+  jersey_number text,
   base_price numeric not null check (base_price >= 0),
   current_bid numeric not null default 0 check (current_bid >= 0),
   current_team_id uuid references public.teams(id),
@@ -65,6 +68,64 @@ create table if not exists public.players (
   image_url text not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.players
+  add column if not exists player_id integer;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'players'
+      and column_name = 'player_number'
+  ) then
+    execute 'update public.players set player_id = player_number where player_id is null';
+  end if;
+end $$;
+
+with existing_max as (
+  select coalesce(max(player_id), 0) as current_max
+  from public.players
+),
+numbered_players as (
+  select
+    players_to_number.id,
+    (existing_max.current_max + row_number() over (order by players_to_number.created_at, players_to_number.id))::integer as next_player_id
+  from public.players as players_to_number
+  cross join existing_max
+  where players_to_number.player_id is null
+)
+update public.players
+set player_id = numbered_players.next_player_id
+from numbered_players
+where public.players.id = numbered_players.id;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'players_player_id_key'
+      and conrelid = 'public.players'::regclass
+  ) then
+    alter table public.players
+      add constraint players_player_id_key unique (player_id);
+  end if;
+end $$;
+
+alter table public.players
+  alter column player_id set not null;
+
+alter table public.players
+  drop column if exists player_number;
+
+alter table public.players
+  add column if not exists contact text;
+
+alter table public.players
+  add column if not exists jersey_number text;
 
 create table if not exists public.bids (
   id uuid primary key default gen_random_uuid(),
@@ -139,6 +200,8 @@ begin
 end;
 $$;
 
+drop function if exists public.add_player(text, text, text, text, integer, numeric, text);
+
 create or replace function public.add_player(
   p_name text,
   p_role text,
@@ -146,7 +209,9 @@ create or replace function public.add_player(
   p_bowling_style text,
   p_age integer,
   p_base_price numeric,
-  p_image_url text
+  p_image_url text,
+  p_contact text default null,
+  p_jersey_number text default null
 )
 returns uuid
 language plpgsql
@@ -155,10 +220,18 @@ set search_path = public
 as $$
 declare
   v_player_id uuid;
+  v_next_player_id integer;
 begin
   perform public.require_admin();
 
+  lock table public.players in exclusive mode;
+
+  select coalesce(max(player_id), 0) + 1
+  into v_next_player_id
+  from public.players;
+
   insert into public.players (
+    player_id,
     name,
     role,
     batting_style,
@@ -167,9 +240,12 @@ begin
     base_price,
     current_bid,
     image_url,
+    contact,
+    jersey_number,
     status
   )
   values (
+    v_next_player_id,
     p_name,
     p_role,
     p_batting_style,
@@ -178,6 +254,8 @@ begin
     p_base_price,
     p_base_price,
     p_image_url,
+    nullif(p_contact, ''),
+    nullif(p_jersey_number, ''),
     'available'
   )
   returning id into v_player_id;
@@ -185,6 +263,8 @@ begin
   return v_player_id;
 end;
 $$;
+
+drop function if exists public.update_player(uuid, text, text, text, text, integer, numeric, text);
 
 create or replace function public.update_player(
   p_player_id uuid,
@@ -194,7 +274,9 @@ create or replace function public.update_player(
   p_bowling_style text,
   p_age integer,
   p_base_price numeric,
-  p_image_url text
+  p_image_url text,
+  p_contact text default null,
+  p_jersey_number text default null
 )
 returns void
 language plpgsql
@@ -224,6 +306,8 @@ begin
       age = p_age,
       base_price = p_base_price,
       image_url = p_image_url,
+      contact = nullif(p_contact, ''),
+      jersey_number = nullif(p_jersey_number, ''),
       current_bid = case
         when current_team_id is null and status <> 'sold' then p_base_price
         else greatest(current_bid, p_base_price)
@@ -659,88 +743,11 @@ begin
     ('00000000-0000-0000-0000-000000000105', 'Desert Falcons', 'Meera Joshi', 5000, 0, '#b7791f', '', now() + interval '4 seconds'),
     ('00000000-0000-0000-0000-000000000106', 'City Challengers', 'Ravi Nair', 5000, 0, '#0f766e', '', now() + interval '5 seconds');
 
-  insert into public.players (
-    id,
-    name,
-    role,
-    batting_style,
-    bowling_style,
-    age,
-    base_price,
-    current_bid,
-    current_team_id,
-    status,
-    image_url,
-    created_at
-  )
-  values
-    ('00000000-0000-0000-0000-000000000201', 'Aryan Menon', 'Batter', 'Right hand bat', 'Right arm off break', 25, 50, 150, '00000000-0000-0000-0000-000000000101', 'in_bidding', 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=900&q=80', now()),
-    ('00000000-0000-0000-0000-000000000202', 'Rohan Iyer', 'All-rounder', 'Left hand bat', 'Left arm orthodox', 27, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=900&q=80', now() + interval '1 second'),
-    ('00000000-0000-0000-0000-000000000203', 'Samar Gill', 'Bowler', 'Right hand bat', 'Right arm fast', 22, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1593341646782-e0b495cff86d?auto=format&fit=crop&w=900&q=80', now() + interval '2 seconds'),
-    ('00000000-0000-0000-0000-000000000204', 'Kunal Desai', 'Wicket keeper', 'Right hand bat', 'Wicket keeper', 24, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1521412644187-c49fa049e84d?auto=format&fit=crop&w=900&q=80', now() + interval '3 seconds'),
-    ('00000000-0000-0000-0000-000000000205', 'Dev Sharma', 'All-rounder', 'Right hand bat', 'Right arm leg break', 29, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=900&q=80', now() + interval '4 seconds'),
-    ('00000000-0000-0000-0000-000000000206', 'Nikhil Verma', 'Bowler', 'Left hand bat', 'Left arm fast', 21, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1593766788306-28561086694e?auto=format&fit=crop&w=900&q=80', now() + interval '5 seconds'),
-    ('00000000-0000-0000-0000-000000000207', 'Manav Rao', 'Batter', 'Right hand bat', 'Right arm medium', 23, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=900&q=80', now() + interval '6 seconds'),
-    ('00000000-0000-0000-0000-000000000208', 'Ishaan Patel', 'Bowler', 'Left hand bat', 'Left arm fast', 26, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1593341646782-e0b495cff86d?auto=format&fit=crop&w=900&q=80', now() + interval '7 seconds'),
-    ('00000000-0000-0000-0000-000000000209', 'Aditya Nair', 'Wicket keeper', 'Right hand bat', 'Wicket keeper', 28, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1521412644187-c49fa049e84d?auto=format&fit=crop&w=900&q=80', now() + interval '8 seconds'),
-    ('00000000-0000-0000-0000-000000000210', 'Varun Shetty', 'All-rounder', 'Right hand bat', 'Right arm fast medium', 30, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=900&q=80', now() + interval '9 seconds'),
-    ('00000000-0000-0000-0000-000000000211', 'Pranav Kumar', 'Batter', 'Left hand bat', 'Right arm off break', 24, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=900&q=80', now() + interval '10 seconds'),
-    ('00000000-0000-0000-0000-000000000212', 'Harsh Vyas', 'Bowler', 'Right hand bat', 'Right arm leg break', 22, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1593766788306-28561086694e?auto=format&fit=crop&w=900&q=80', now() + interval '11 seconds');
-
-  insert into public.bids (id, player_id, team_id, amount, created_at)
-  values
-    ('00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000101', 150, now()),
-    ('00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000102', 100, now() - interval '1 minute');
 end;
 $$;
 
 insert into public.auction_settings (id, bid_increment, default_base_price)
 values (true, 50, 50)
-on conflict (id) do nothing;
-
-insert into public.teams (id, name, owner, purse, spent, color, logo_url, created_at)
-values
-  ('00000000-0000-0000-0000-000000000101', 'VSV Kings', 'Arjun Mehta', 5000, 0, '#176b48', '', now()),
-  ('00000000-0000-0000-0000-000000000102', 'Coastal Strikers', 'Nisha Rao', 5000, 0, '#c7511f', '', now() + interval '1 second'),
-  ('00000000-0000-0000-0000-000000000103', 'Metro Titans', 'Vikram Shah', 5000, 0, '#3867a6', '', now() + interval '2 seconds'),
-  ('00000000-0000-0000-0000-000000000104', 'Hill Rangers', 'Kabir Khan', 5000, 0, '#8a3ffc', '', now() + interval '3 seconds'),
-  ('00000000-0000-0000-0000-000000000105', 'Desert Falcons', 'Meera Joshi', 5000, 0, '#b7791f', '', now() + interval '4 seconds'),
-  ('00000000-0000-0000-0000-000000000106', 'City Challengers', 'Ravi Nair', 5000, 0, '#0f766e', '', now() + interval '5 seconds')
-on conflict (id) do nothing;
-
-insert into public.players (
-  id,
-  name,
-  role,
-  batting_style,
-  bowling_style,
-  age,
-  base_price,
-  current_bid,
-  current_team_id,
-  status,
-  image_url,
-  created_at
-)
-values
-  ('00000000-0000-0000-0000-000000000201', 'Aryan Menon', 'Batter', 'Right hand bat', 'Right arm off break', 25, 50, 150, '00000000-0000-0000-0000-000000000101', 'in_bidding', 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=900&q=80', now()),
-  ('00000000-0000-0000-0000-000000000202', 'Rohan Iyer', 'All-rounder', 'Left hand bat', 'Left arm orthodox', 27, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=900&q=80', now() + interval '1 second'),
-  ('00000000-0000-0000-0000-000000000203', 'Samar Gill', 'Bowler', 'Right hand bat', 'Right arm fast', 22, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1593341646782-e0b495cff86d?auto=format&fit=crop&w=900&q=80', now() + interval '2 seconds'),
-  ('00000000-0000-0000-0000-000000000204', 'Kunal Desai', 'Wicket keeper', 'Right hand bat', 'Wicket keeper', 24, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1521412644187-c49fa049e84d?auto=format&fit=crop&w=900&q=80', now() + interval '3 seconds'),
-  ('00000000-0000-0000-0000-000000000205', 'Dev Sharma', 'All-rounder', 'Right hand bat', 'Right arm leg break', 29, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=900&q=80', now() + interval '4 seconds'),
-  ('00000000-0000-0000-0000-000000000206', 'Nikhil Verma', 'Bowler', 'Left hand bat', 'Left arm fast', 21, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1593766788306-28561086694e?auto=format&fit=crop&w=900&q=80', now() + interval '5 seconds'),
-  ('00000000-0000-0000-0000-000000000207', 'Manav Rao', 'Batter', 'Right hand bat', 'Right arm medium', 23, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=900&q=80', now() + interval '6 seconds'),
-  ('00000000-0000-0000-0000-000000000208', 'Ishaan Patel', 'Bowler', 'Left hand bat', 'Left arm fast', 26, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1593341646782-e0b495cff86d?auto=format&fit=crop&w=900&q=80', now() + interval '7 seconds'),
-  ('00000000-0000-0000-0000-000000000209', 'Aditya Nair', 'Wicket keeper', 'Right hand bat', 'Wicket keeper', 28, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1521412644187-c49fa049e84d?auto=format&fit=crop&w=900&q=80', now() + interval '8 seconds'),
-  ('00000000-0000-0000-0000-000000000210', 'Varun Shetty', 'All-rounder', 'Right hand bat', 'Right arm fast medium', 30, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=900&q=80', now() + interval '9 seconds'),
-  ('00000000-0000-0000-0000-000000000211', 'Pranav Kumar', 'Batter', 'Left hand bat', 'Right arm off break', 24, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=900&q=80', now() + interval '10 seconds'),
-  ('00000000-0000-0000-0000-000000000212', 'Harsh Vyas', 'Bowler', 'Right hand bat', 'Right arm leg break', 22, 50, 50, null, 'available', 'https://images.unsplash.com/photo-1593766788306-28561086694e?auto=format&fit=crop&w=900&q=80', now() + interval '11 seconds')
-on conflict (id) do nothing;
-
-insert into public.bids (id, player_id, team_id, amount, created_at)
-values
-  ('00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000101', 150, now()),
-  ('00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000102', 100, now() - interval '1 minute')
 on conflict (id) do nothing;
 
 grant usage on schema public to anon, authenticated;
@@ -751,8 +758,8 @@ grant select on public.bids to anon, authenticated;
 grant select on public.admin_users to authenticated;
 
 revoke execute on function public.place_bid(uuid, uuid) from public;
-revoke execute on function public.add_player(text, text, text, text, integer, numeric, text) from public;
-revoke execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text) from public;
+revoke execute on function public.add_player(text, text, text, text, integer, numeric, text, text, text) from public;
+revoke execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text, text, text) from public;
 revoke execute on function public.start_player(uuid) from public;
 revoke execute on function public.sell_player(uuid) from public;
 revoke execute on function public.mark_unsold(uuid) from public;
@@ -764,8 +771,8 @@ revoke execute on function public.delete_team(uuid) from public;
 revoke execute on function public.reset_demo_data() from public;
 
 grant execute on function public.place_bid(uuid, uuid) to authenticated;
-grant execute on function public.add_player(text, text, text, text, integer, numeric, text) to authenticated;
-grant execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text) to authenticated;
+grant execute on function public.add_player(text, text, text, text, integer, numeric, text, text, text) to authenticated;
+grant execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text, text, text) to authenticated;
 grant execute on function public.start_player(uuid) to authenticated;
 grant execute on function public.sell_player(uuid) to authenticated;
 grant execute on function public.mark_unsold(uuid) to authenticated;

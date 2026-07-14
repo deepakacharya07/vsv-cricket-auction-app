@@ -90,9 +90,9 @@ img {
 
 .brand-mark {
   align-items: center;
-  background: white;
-  border: 2px dashed var(--line);
-  border-radius: 999px;
+  background: white url("public/01_Vishwaparva_logo_KT.png") center / 150% auto no-repeat;
+  border: 0;
+  border-radius: 150px;
   color: var(--muted);
   display: inline-flex;
   flex: 0 0 auto;
@@ -105,7 +105,7 @@ img {
 }
 
 .brand-mark::before {
-  content: "+";
+  content: "";
 }
 
 .header-center-logo {

@@ -3,10 +3,17 @@ const ADMIN_AUTH_KEY = "vsv-auction-admin-auth";
 const DEFAULT_BID_INCREMENT = 50;
 const DEFAULT_TEAM_PURSE = 5000;
 const DEFAULT_BASE_PRICE = 50;
+const RECENT_BID_LIMIT = 25;
+const REALTIME_REFRESH_SUPPRESS_MS = 1200;
 const RESET_DEMO_ENABLED = false;
 const MAX_INLINE_IMAGE_SIZE = 1024 * 1024;
+const MAX_STORAGE_IMAGE_SIZE = 5 * 1024 * 1024;
+const PLAYER_PHOTO_BUCKET = "player-photos";
 const DEFAULT_PLAYER_IMAGE_URL =
   "https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=900&q=80";
+const PLAYER_SELECT_BASE =
+  "id, player_id, name, role, batting_style, bowling_style, age, contact, jersey_number, base_price, current_bid, current_team_id, sold_team_id, status, created_at";
+const PLAYER_SELECT_WITH_IMAGE = `${PLAYER_SELECT_BASE}, image_url`;
 const DEMO_ADMIN = {
   email: "admin@vsvauction.local",
   password: "admin123",
@@ -256,6 +263,9 @@ let currentUserIsAdmin = false;
 let adminEventsBound = false;
 let auctionEventsBound = false;
 let realtimeRefreshTimer = null;
+let realtimeRefreshSuppressedUntil = 0;
+let authStateLoaded = false;
+const adminAccessCache = new Map();
 const adminPlayerSearchTerms = {
   available: "",
   unsold: "",
@@ -285,12 +295,16 @@ async function bootstrapApp() {
     renderPlayersPage();
   }
 
+  if (page === "teams") {
+    renderTeamsPage();
+  }
+
   if (page === "login") {
     renderLoginPage();
   }
 
   if (page === "admin") {
-    await renderAdminPage();
+    renderAdminPage();
   }
 }
 
@@ -345,15 +359,22 @@ function saveLocalState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-async function loadRemoteState() {
+async function loadRemoteState({ includePlayerImages = true } = {}) {
+  const existingPlayerImages = new Map(
+    state.players
+      .filter((player) => player.imageUrl)
+      .map((player) => [player.id, player.imageUrl])
+  );
+  const playerSelect = includePlayerImages ? PLAYER_SELECT_WITH_IMAGE : PLAYER_SELECT_BASE;
+
   const [settingsResult, teamsResult, playersResult, bidsResult] =
     await Promise.all([
       supabaseClient.from("auction_settings").select("*").limit(1).maybeSingle(),
       supabaseClient.from("teams").select("*").order("created_at"),
-      supabaseClient.from("players").select("*").order("created_at"),
+      supabaseClient.from("players").select(playerSelect).order("created_at"),
       supabaseClient.from("bids").select("*").order("created_at", {
         ascending: false,
-      }),
+      }).limit(RECENT_BID_LIMIT),
     ]);
 
   throwIfSupabaseError(settingsResult.error);
@@ -362,7 +383,7 @@ async function loadRemoteState() {
   throwIfSupabaseError(bidsResult.error);
 
   const players = (playersResult.data ?? [])
-    .map(dbPlayerToState)
+    .map((row) => dbPlayerToState(row, existingPlayerImages))
     .sort((a, b) => Number(a.playerNumber ?? 0) - Number(b.playerNumber ?? 0));
   const inBidding = players.find((player) => player.status === "in_bidding");
 
@@ -395,23 +416,59 @@ function subscribeToRealtime() {
 }
 
 function scheduleRemoteRefresh() {
+  const now = Date.now();
+  const delay =
+    now < realtimeRefreshSuppressedUntil
+      ? realtimeRefreshSuppressedUntil - now + 75
+      : 150;
+
   window.clearTimeout(realtimeRefreshTimer);
   realtimeRefreshTimer = window.setTimeout(async () => {
+    if (Date.now() < realtimeRefreshSuppressedUntil) {
+      scheduleRemoteRefresh();
+      return;
+    }
+
     try {
-      await loadRemoteState();
+      await loadRemoteState({ includePlayerImages: false });
       renderCurrentPage();
     } catch (error) {
       console.error("Realtime refresh failed.", error);
     }
-  }, 150);
+  }, delay);
 }
 
-async function refreshAuthState() {
+function suppressRealtimeRefresh() {
+  realtimeRefreshSuppressedUntil = Math.max(
+    realtimeRefreshSuppressedUntil,
+    Date.now() + REALTIME_REFRESH_SUPPRESS_MS
+  );
+  window.clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = null;
+}
+
+async function refreshRemoteStateAfterMutation(
+  render = renderCurrentPage,
+  { includePlayerImages = true } = {}
+) {
+  await loadRemoteState({ includePlayerImages });
+  suppressRealtimeRefresh();
+  if (typeof render === "function") {
+    render();
+  }
+}
+
+async function refreshAuthState({ force = false } = {}) {
+  if (authStateLoaded && !force) {
+    return;
+  }
+
   currentUser = null;
   currentUserIsAdmin = false;
 
   if (!supabaseClient) {
     currentUserIsAdmin = localStorage.getItem(ADMIN_AUTH_KEY) === "true";
+    authStateLoaded = true;
     return;
   }
 
@@ -421,14 +478,20 @@ async function refreshAuthState() {
   } = await supabaseClient.auth.getUser();
 
   if (error || !user) {
+    authStateLoaded = true;
     return;
   }
 
   currentUser = user;
   currentUserIsAdmin = await userHasAdminAccess(user.id);
+  authStateLoaded = true;
 }
 
 async function userHasAdminAccess(userId) {
+  if (adminAccessCache.has(userId)) {
+    return adminAccessCache.get(userId);
+  }
+
   const { data, error } = await supabaseClient
     .from("admin_users")
     .select("user_id")
@@ -441,7 +504,9 @@ async function userHasAdminAccess(userId) {
     return false;
   }
 
-  return Boolean(data);
+  const hasAccess = Boolean(data);
+  adminAccessCache.set(userId, hasAccess);
+  return hasAccess;
 }
 
 function renderCurrentPage() {
@@ -452,11 +517,15 @@ function renderCurrentPage() {
   }
 
   if (page === "admin") {
-    void renderAdminPage();
+    renderAdminLiveState();
   }
 
   if (page === "players") {
     renderPlayersPage();
+  }
+
+  if (page === "teams") {
+    renderTeamsPage();
   }
 }
 
@@ -511,6 +580,70 @@ function renderAuctionBoard() {
 
 function renderPlayersPage() {
   renderPlayerGrid();
+}
+
+function renderTeamsPage() {
+  renderTeamRosterGrid();
+}
+
+function renderTeamRosterGrid() {
+  const root = document.getElementById("team-roster-grid");
+  if (!root) {
+    return;
+  }
+
+  root.innerHTML = state.teams.map(teamRosterCard).join("");
+}
+
+function teamRosterCard(team) {
+  const rosterPlayers = teamRosterPlayers(team);
+
+  return `
+    <article class="team-roster-card">
+      <div class="team-roster-header">
+        <div class="team-roster-title">
+          ${teamLogo(team)}
+          <div>
+            <h2>${escapeHtml(team.name)}</h2>
+            <p>${escapeHtml(team.owner)}</p>
+          </div>
+        </div>
+        <span class="team-roster-count">${rosterPlayers.length}</span>
+      </div>
+      <div class="team-player-list">
+        ${
+          rosterPlayers.length
+            ? rosterPlayers.map(teamRosterPlayerRow).join("")
+            : `<p class="empty-state">No players assigned to this team yet.</p>`
+        }
+      </div>
+    </article>
+  `;
+}
+
+function teamRosterPlayers(team) {
+  return sortPlayersById(
+    state.players.filter((player) => playerRosterTeamId(player) === team.id)
+  );
+}
+
+function playerRosterTeamId(player) {
+  return player.soldTeamId ?? player.currentTeamId ?? getPlayerLeadership(player.id).teamId;
+}
+
+function teamRosterPlayerRow(player) {
+  return `
+    <div class="team-player-row">
+      <img class="team-player-photo" alt="${escapeAttr(player.name)}" decoding="async" loading="lazy" src="${escapeAttr(player.imageUrl)}" />
+      <div class="team-player-main">
+        <strong>${escapeHtml(player.name)}</strong>
+        <small>${escapeHtml(player.role)} | Jersey ${escapeHtml(player.jerseyNumber || "-")}</small>
+      </div>
+      <div class="team-player-meta">
+        ${playerLeadershipBadge(player.id)}
+      </div>
+    </div>
+  `;
 }
 
 function renderAuctionActionState() {
@@ -584,19 +717,23 @@ function renderPlayerGrid() {
       (player) => `
         <article class="player-card">
           <span class="serial-badge">${escapeHtml(playerSerial(player))}</span>
-          <img alt="${escapeAttr(player.name)}" src="${escapeAttr(player.imageUrl)}" />
+          <img class="player-card-photo" alt="${escapeAttr(player.name)}" decoding="async" loading="lazy" src="${escapeAttr(player.imageUrl)}" />
+          ${playerLeadershipImageLogo(player.id)}
           <div class="player-card-header">
             <div>
               <h3>${escapeHtml(player.name)}</h3>
               <p>${escapeHtml(player.role)} | Jersey ${escapeHtml(player.jerseyNumber || "-")}</p>
             </div>
-            ${statusBadge(player.status)}
+            <div class="player-card-badges">
+              ${playerLeadershipBadge(player.id)}
+              ${statusBadge(player.status)}
+            </div>
           </div>
           <div class="info-grid">
             ${info("Base", formatMoney(player.basePrice))}
             ${info("Bid", formatMoney(player.currentBid))}
-            ${info("Batting", player.battingStyle)}
-            ${info("Bowling", player.bowlingStyle)}
+            ${info("Role", player.role)}
+            ${info("Team", playerTeamName(player))}
           </div>
         </article>
       `
@@ -768,7 +905,7 @@ async function handleLoginSubmit() {
     throw signInError;
   }
 
-  await refreshAuthState();
+  await refreshAuthState({ force: true });
   if (!currentUserIsAdmin) {
     await supabaseClient.auth.signOut();
     throw new Error("This user is not listed in public.admin_users.");
@@ -777,9 +914,7 @@ async function handleLoginSubmit() {
   window.location.href = "admin.html";
 }
 
-async function renderAdminPage() {
-  await refreshAuthState();
-
+function renderAdminPage() {
   if (!currentUserIsAdmin) {
     document.getElementById("admin-root").innerHTML = `
       <section class="guard">
@@ -791,14 +926,55 @@ async function renderAdminPage() {
     return;
   }
 
-  renderAdminCurrentLot();
-  renderTeamBidButtons(getCurrentPlayer());
+  renderAdminAuctionState({ includeTeamPurse: true });
   renderAuctionSettings();
-  renderAdminPlayerTable();
-  renderAdminTeams();
+  renderAddPlayerLeadershipOptions();
   renderAdminTeamEditor();
-  renderAdminResetActionState();
   bindAdminEvents();
+}
+
+function renderAdminAuctionState({
+  includePlayerTable = true,
+  includeTeamPurse = false,
+} = {}) {
+  renderAdminCurrentLot();
+  renderAdminLotMetrics();
+  renderTeamBidButtons(getCurrentPlayer());
+  if (includePlayerTable) {
+    renderAdminPlayerTable();
+  }
+  if (includeTeamPurse) {
+    renderAdminTeams();
+  }
+  renderAdminResetActionState();
+}
+
+function renderAdminLiveState() {
+  if (!currentUserIsAdmin || !document.getElementById("admin-current-lot")) {
+    renderAdminPage();
+    return;
+  }
+
+  renderAdminAuctionState({ includeTeamPurse: true });
+
+  const setupPanel = document.getElementById("admin-panel-setup");
+  if (setupPanel && !setupPanel.hidden) {
+    renderAuctionSettings();
+    renderAddPlayerLeadershipOptions();
+    renderAdminTeamEditor();
+  }
+}
+
+function renderAfterAuctionAction({
+  includePlayerTable = true,
+  includeTeamPurse = false,
+} = {}) {
+  if (document.body.dataset.page === "admin") {
+    renderAdminAuctionState({ includePlayerTable, includeTeamPurse });
+    return;
+  }
+
+  renderCurrentPage();
 }
 
 function renderAdminResetActionState() {
@@ -828,6 +1004,106 @@ function renderAuctionSettings() {
   if (addPlayerBasePriceInput) {
     addPlayerBasePriceInput.value = String(state.defaultBasePrice ?? DEFAULT_BASE_PRICE);
   }
+}
+
+function renderAddPlayerLeadershipOptions() {
+  const teamSelect = document.getElementById("new-leadership-team");
+  if (teamSelect instanceof HTMLSelectElement) {
+    populateLeadershipTeamSelect(teamSelect);
+  }
+}
+
+function populateLeadershipTeamSelect(select, selectedTeamId = "") {
+  select.innerHTML = [
+    `<option value="">Select team</option>`,
+    ...state.teams.map(
+      (team) =>
+        `<option value="${escapeAttr(team.id)}" ${
+          team.id === selectedTeamId ? "selected" : ""
+        }>${escapeHtml(team.name)}</option>`
+    ),
+  ].join("");
+}
+
+function getPlayerLeadership(playerId) {
+  const captainTeam = state.teams.find((team) => team.captainPlayerId === playerId);
+  if (captainTeam) {
+    return {
+      team: captainTeam,
+      teamId: captainTeam.id,
+      teamName: captainTeam.name,
+      role: "captain",
+    };
+  }
+
+  const viceCaptainTeam = state.teams.find((team) => team.viceCaptainPlayerId === playerId);
+  if (viceCaptainTeam) {
+    return {
+      team: viceCaptainTeam,
+      teamId: viceCaptainTeam.id,
+      teamName: viceCaptainTeam.name,
+      role: "vice_captain",
+    };
+  }
+
+  return { team: undefined, teamId: "", teamName: "", role: "" };
+}
+
+function playerLeadershipLabel(playerId) {
+  const leadership = getPlayerLeadership(playerId);
+
+  if (leadership.role === "captain") {
+    return `Captain - ${leadership.teamName}`;
+  }
+
+  if (leadership.role === "vice_captain") {
+    return `Vice captain - ${leadership.teamName}`;
+  }
+
+  return "";
+}
+
+function playerLeadershipBadge(playerId) {
+  const leadership = getPlayerLeadership(playerId);
+  if (!leadership.role || !leadership.team) {
+    return "";
+  }
+
+  const label = playerLeadershipLabel(playerId);
+  const shortLabel = leadership.role === "captain" ? "C" : "VC";
+
+  return `
+    <span class="leadership-badge player-leadership-badge" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">
+      <span class="leadership-short-code">${escapeHtml(shortLabel)}</span>
+    </span>
+  `;
+}
+
+function playerLeadershipImageLogo(playerId) {
+  const leadership = getPlayerLeadership(playerId);
+  if (!leadership.role || !leadership.team) {
+    return "";
+  }
+
+  return teamLogo(leadership.team, "player-card-team-logo");
+}
+
+function playerLeadershipCell(playerId) {
+  const label = playerLeadershipLabel(playerId);
+  if (!label) {
+    return `<span class="muted-value">-</span>`;
+  }
+
+  return `<span class="leadership-cell-text">${escapeHtml(label)}</span>`;
+}
+
+function playerTeamName(player) {
+  const assignedTeam = findTeam(player.soldTeamId) ?? findTeam(player.currentTeamId);
+  if (assignedTeam) {
+    return assignedTeam.name;
+  }
+
+  return getPlayerLeadership(player.id).teamName || "-";
 }
 
 function renderAdminCurrentLot() {
@@ -863,6 +1139,17 @@ function renderAdminCurrentLot() {
       </div>
     </div>
   `;
+}
+
+function renderAdminLotMetrics() {
+  const currentPlayer = getCurrentPlayer();
+  const leadingTeam = currentPlayer?.currentTeamId
+    ? findTeam(currentPlayer.currentTeamId)
+    : undefined;
+
+  setText("admin-current-base", formatMoney(currentPlayer?.basePrice ?? 0));
+  setText("admin-current-bid", formatMoney(currentPlayer?.currentBid ?? 0));
+  setText("admin-current-leading", leadingTeam?.name ?? "Open");
 }
 
 function renderAdminPlayerTable() {
@@ -989,6 +1276,7 @@ function adminPlayerSearchText(player) {
     player.status.replace("_", " "),
     player.contact,
     player.jerseyNumber,
+    playerLeadershipLabel(player.id),
     team?.name,
     team?.owner,
   ]
@@ -1030,6 +1318,7 @@ function renderAdminPlayerRows(players, emptyMessage) {
           <span>Base</span>
           <span>Bid</span>
           <span>Status</span>
+          <span>Captain</span>
           <span>Action</span>
         </div>
       ${players
@@ -1038,7 +1327,7 @@ function renderAdminPlayerRows(players, emptyMessage) {
             <div class="data-row player-data-row">
               <span class="serial-cell mobile-field" data-label="ID">${escapeHtml(playerSerialNumber(player))}</span>
               <span class="player-cell">
-                <img alt="${escapeAttr(player.name)}" src="${escapeAttr(player.imageUrl)}" />
+                <img alt="${escapeAttr(player.name)}" decoding="async" loading="lazy" src="${escapeAttr(player.imageUrl)}" />
                 <span>
                   <strong>${escapeHtml(player.name)}</strong>
                   <small>${escapeHtml(playerMeta(player))}</small>
@@ -1048,6 +1337,7 @@ function renderAdminPlayerRows(players, emptyMessage) {
               <span class="mobile-field" data-label="Base">${formatMoney(player.basePrice)}</span>
               <span class="mobile-field" data-label="Bid">${formatMoney(player.currentBid)}</span>
               <span class="mobile-field" data-label="Status">${statusBadge(player.status)}</span>
+              <span class="mobile-field leadership-cell" data-label="Captain">${playerLeadershipCell(player.id)}</span>
               <span class="row-actions">
                 <button class="secondary-button compact-button" data-player-edit="${escapeAttr(player.id)}" type="button">Edit</button>
                 <button class="secondary-button compact-button" data-admin-start="${escapeAttr(player.id)}" ${player.status === "sold" ? "disabled" : ""} type="button">Start</button>
@@ -1080,6 +1370,12 @@ function showPlayerEditDialog(playerId) {
   setPlayerEditFormValue(form, "bowlingStyle", player.bowlingStyle);
   setPlayerEditFormValue(form, "contact", player.contact);
   setPlayerEditFormValue(form, "jerseyNumber", player.jerseyNumber);
+  const leadership = getPlayerLeadership(player.id);
+  const leadershipTeamSelect = form.elements.namedItem("leadershipTeamId");
+  if (leadershipTeamSelect instanceof HTMLSelectElement) {
+    populateLeadershipTeamSelect(leadershipTeamSelect, leadership.teamId);
+  }
+  setPlayerEditFormValue(form, "leadershipRole", leadership.role);
 
   const imageInput = form.elements.namedItem("imageFile");
   if (imageInput instanceof HTMLInputElement) {
@@ -1444,7 +1740,14 @@ function bindAdminEvents() {
           age: Number(valueOf("new-age")),
           contact: valueOf("new-contact"),
           jerseyNumber: valueOf("new-jersey-number"),
-          imageUrl: await imageValue("new-image-file", DEFAULT_PLAYER_IMAGE_URL),
+          imageUrl: await imageValue("new-image-file", DEFAULT_PLAYER_IMAGE_URL, {
+            folder: "players",
+            nameHint: valueOf("new-name"),
+            storageBucket: PLAYER_PHOTO_BUCKET,
+          }),
+        }, {
+          teamId: valueOf("new-leadership-team"),
+          role: valueOf("new-leadership-role"),
         });
         form.reset();
         document.getElementById("new-base-price").value = String(
@@ -1484,10 +1787,22 @@ function bindAdminEvents() {
           imageUrl: await imageValueFromForm(
             form,
             "imageFile",
-            existingPlayer?.imageUrl ?? DEFAULT_PLAYER_IMAGE_URL
+            existingPlayer?.imageUrl ?? DEFAULT_PLAYER_IMAGE_URL,
+            {
+              folder: "players",
+              nameHint: namedValue(form, "name"),
+              recordId: form.dataset.playerId,
+              storageBucket: PLAYER_PHOTO_BUCKET,
+            }
           ),
+        }, {
+          teamId: namedValue(form, "leadershipTeamId"),
+          role: namedValue(form, "leadershipRole"),
+        }, {
+          render: false,
         });
         closePlayerEditDialog();
+        renderCurrentPage();
       });
       return;
     }
@@ -1530,6 +1845,9 @@ async function logout() {
   } else {
     localStorage.removeItem(ADMIN_AUTH_KEY);
   }
+  authStateLoaded = false;
+  currentUser = null;
+  currentUserIsAdmin = false;
   window.location.href = "login.html";
 }
 
@@ -1547,8 +1865,7 @@ async function resetAuction() {
       return;
     }
     await rpc("reset_demo_data");
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation();
     return;
   }
 
@@ -1569,8 +1886,7 @@ async function updateAuctionConfig({ defaultBasePrice, bidIncrement, teamPurse }
       p_bid_increment: bidIncrement,
       p_team_purse: teamPurse,
     });
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation();
     return;
   }
 
@@ -1592,8 +1908,7 @@ async function addTeam(team) {
       p_color: team.color,
       p_logo_url: team.logoUrl,
     });
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation();
     return;
   }
 
@@ -1616,8 +1931,7 @@ async function updateTeam(teamId, team) {
       p_color: team.color,
       p_logo_url: team.logoUrl,
     });
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation();
     return;
   }
 
@@ -1635,8 +1949,7 @@ async function deleteTeam(teamId) {
 
   if (supabaseClient) {
     await rpc("delete_team", { p_team_id: teamId });
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation();
     return;
   }
 
@@ -1653,8 +1966,9 @@ async function startPlayer(playerId) {
 
   if (supabaseClient) {
     await rpc("start_player", { p_player_id: playerId });
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation(() => renderAfterAuctionAction(), {
+      includePlayerImages: false,
+    });
     return;
   }
 
@@ -1676,7 +1990,7 @@ async function startPlayer(playerId) {
   });
   state.currentPlayerId = playerId;
   saveLocalState();
-  renderCurrentPage();
+  renderAfterAuctionAction();
 }
 
 async function placeBid(playerId, teamId) {
@@ -1685,8 +1999,10 @@ async function placeBid(playerId, teamId) {
       throw new Error("Admin login required before placing bids.");
     }
     await rpc("place_bid", { p_player_id: playerId, p_team_id: teamId });
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation(
+      () => renderAfterAuctionAction({ includePlayerTable: false }),
+      { includePlayerImages: false }
+    );
     return;
   }
 
@@ -1721,14 +2037,16 @@ async function placeBid(playerId, teamId) {
     }),
   });
   saveLocalState();
-  renderCurrentPage();
+  renderAfterAuctionAction({ includePlayerTable: false });
 }
 
 async function sellPlayer(playerId) {
   if (supabaseClient) {
     await rpc("sell_player", { p_player_id: playerId });
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation(
+      () => renderAfterAuctionAction({ includeTeamPurse: true }),
+      { includePlayerImages: false }
+    );
     return;
   }
 
@@ -1746,7 +2064,7 @@ async function sellPlayer(playerId) {
   player.status = "sold";
   advanceToNextPlayer();
   saveLocalState();
-  renderCurrentPage();
+  renderAfterAuctionAction({ includeTeamPurse: true });
 }
 
 async function makePlayerAvailable(playerId) {
@@ -1756,8 +2074,9 @@ async function makePlayerAvailable(playerId) {
 
   if (supabaseClient) {
     await rpc("make_player_available", { p_player_id: playerId });
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation(() => renderAfterAuctionAction(), {
+      includePlayerImages: false,
+    });
     return;
   }
 
@@ -1776,14 +2095,15 @@ async function makePlayerAvailable(playerId) {
   }
 
   saveLocalState();
-  renderCurrentPage();
+  renderAfterAuctionAction();
 }
 
 async function markUnsold(playerId) {
   if (supabaseClient) {
     await rpc("mark_unsold", { p_player_id: playerId });
-    await loadRemoteState();
-    renderCurrentPage();
+    await refreshRemoteStateAfterMutation(() => renderAfterAuctionAction(), {
+      includePlayerImages: false,
+    });
     return;
   }
 
@@ -1797,12 +2117,12 @@ async function markUnsold(playerId) {
   player.status = "unsold";
   advanceToNextPlayer();
   saveLocalState();
-  renderCurrentPage();
+  renderAfterAuctionAction();
 }
 
-async function addPlayer(player) {
+async function addPlayer(player, leadership = {}) {
   if (supabaseClient) {
-    await rpc("add_player", {
+    const playerId = await rpc("add_player", {
       p_name: player.name,
       p_role: player.role,
       p_batting_style: player.battingStyle,
@@ -1813,23 +2133,26 @@ async function addPlayer(player) {
       p_contact: player.contact,
       p_jersey_number: player.jerseyNumber,
     });
-    await loadRemoteState();
-    renderCurrentPage();
+    await updatePlayerLeadership(playerId, leadership);
+    await refreshRemoteStateAfterMutation();
     return;
   }
 
-  state.players.push({
+  const newPlayer = {
     ...player,
     id: makeId("player"),
     playerNumber: nextPlayerNumber(),
     currentBid: player.basePrice,
     status: "available",
-  });
+  };
+
+  state.players.push(newPlayer);
+  applyPlayerLeadershipToState(newPlayer.id, leadership);
   saveLocalState();
   renderCurrentPage();
 }
 
-async function updatePlayer(playerId, player) {
+async function updatePlayer(playerId, player, leadership = {}, options = {}) {
   if (supabaseClient) {
     await rpc("update_player", {
       p_player_id: playerId,
@@ -1843,8 +2166,10 @@ async function updatePlayer(playerId, player) {
       p_contact: player.contact,
       p_jersey_number: player.jerseyNumber,
     });
-    await loadRemoteState();
-    renderCurrentPage();
+    await updatePlayerLeadership(playerId, leadership);
+    await refreshRemoteStateAfterMutation(
+      options.render === false ? null : renderCurrentPage
+    );
     return;
   }
 
@@ -1864,13 +2189,122 @@ async function updatePlayer(playerId, player) {
       currentBid: nextCurrentBid,
     };
   });
+  applyPlayerLeadershipToState(playerId, leadership);
   saveLocalState();
-  renderCurrentPage();
+  if (options.render !== false) {
+    renderCurrentPage();
+  }
+}
+
+async function updatePlayerLeadership(playerId, leadership) {
+  const normalizedLeadership = normalizeLeadershipSelection(leadership);
+
+  if (supabaseClient) {
+    const updates = buildPlayerLeadershipUpdates(playerId, normalizedLeadership);
+    for (const update of updates) {
+      await rpc("set_team_captains", {
+        p_team_id: update.teamId,
+        p_captain_player_id: update.captainPlayerId,
+        p_vice_captain_player_id: update.viceCaptainPlayerId,
+      });
+    }
+    return;
+  }
+
+  applyPlayerLeadershipToState(playerId, normalizedLeadership);
+}
+
+function applyPlayerLeadershipToState(playerId, leadership) {
+  const normalizedLeadership = normalizeLeadershipSelection(leadership);
+  const updates = buildPlayerLeadershipUpdates(playerId, normalizedLeadership);
+
+  if (!updates.length) {
+    return;
+  }
+
+  state.teams = state.teams.map((team) => {
+    const update = updates.find((nextUpdate) => nextUpdate.teamId === team.id);
+    if (!update) {
+      return team;
+    }
+
+    return {
+      ...team,
+      captainPlayerId: update.captainPlayerId ?? undefined,
+      viceCaptainPlayerId: update.viceCaptainPlayerId ?? undefined,
+    };
+  });
+}
+
+function buildPlayerLeadershipUpdates(playerId, leadership) {
+  return state.teams
+    .map((team) => {
+      let captainPlayerId = team.captainPlayerId ?? null;
+      let viceCaptainPlayerId = team.viceCaptainPlayerId ?? null;
+
+      if (captainPlayerId === playerId) {
+        captainPlayerId = null;
+      }
+
+      if (viceCaptainPlayerId === playerId) {
+        viceCaptainPlayerId = null;
+      }
+
+      if (team.id === leadership.teamId) {
+        if (leadership.role === "captain") {
+          captainPlayerId = playerId;
+        }
+
+        if (leadership.role === "vice_captain") {
+          viceCaptainPlayerId = playerId;
+        }
+      }
+
+      if (
+        captainPlayerId === (team.captainPlayerId ?? null) &&
+        viceCaptainPlayerId === (team.viceCaptainPlayerId ?? null)
+      ) {
+        return null;
+      }
+
+      return {
+        teamId: team.id,
+        captainPlayerId,
+        viceCaptainPlayerId,
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeLeadershipSelection(leadership) {
+  const role = leadership?.role ?? "";
+  const teamId = leadership?.teamId ?? "";
+
+  if (!["", "captain", "vice_captain"].includes(role)) {
+    throw new Error("Choose a valid captain or vice captain option.");
+  }
+
+  if (!role) {
+    return { teamId: "", role: "" };
+  }
+
+  if (!teamId) {
+    throw new Error("Choose a team for the captain or vice captain.");
+  }
+
+  if (!state.teams.some((team) => team.id === teamId)) {
+    throw new Error("Selected team was not found.");
+  }
+
+  return { teamId, role };
 }
 
 async function rpc(name, args = {}) {
-  const { error } = await supabaseClient.rpc(name, args);
+  suppressRealtimeRefresh();
+  const { data, error } = await supabaseClient.rpc(name, args);
+  suppressRealtimeRefresh();
   throwIfSupabaseError(error);
+  return data;
 }
 
 async function runAction(action) {
@@ -2070,10 +2504,12 @@ function dbTeamToState(row) {
     spent: Number(row.spent),
     color: row.color,
     logoUrl: row.logo_url ?? "",
+    captainPlayerId: row.captain_player_id ?? undefined,
+    viceCaptainPlayerId: row.vice_captain_player_id ?? undefined,
   };
 }
 
-function dbPlayerToState(row) {
+function dbPlayerToState(row, existingPlayerImages = new Map()) {
   const displayPlayerId = row.player_id ?? row.player_number;
 
   return {
@@ -2091,7 +2527,7 @@ function dbPlayerToState(row) {
     currentTeamId: row.current_team_id ?? undefined,
     soldTeamId: row.sold_team_id ?? undefined,
     status: row.status,
-    imageUrl: row.image_url,
+    imageUrl: row.image_url ?? existingPlayerImages.get(row.id) ?? DEFAULT_PLAYER_IMAGE_URL,
   };
 }
 
@@ -2153,25 +2589,25 @@ function namedValue(form, name) {
   return field?.value.trim() ?? "";
 }
 
-async function imageValue(fileInputId, fallbackValue) {
+async function imageValue(fileInputId, fallbackValue, options = {}) {
   const input = document.getElementById(fileInputId);
   if (!(input instanceof HTMLInputElement)) {
     return fallbackValue;
   }
 
-  return imageValueFromInput(input, fallbackValue);
+  return imageValueFromInput(input, fallbackValue, options);
 }
 
-async function imageValueFromForm(form, fileInputName, fallbackValue) {
+async function imageValueFromForm(form, fileInputName, fallbackValue, options = {}) {
   const input = form.elements.namedItem(fileInputName);
   if (!(input instanceof HTMLInputElement)) {
     return fallbackValue;
   }
 
-  return imageValueFromInput(input, fallbackValue);
+  return imageValueFromInput(input, fallbackValue, options);
 }
 
-async function imageValueFromInput(input, fallbackValue) {
+async function imageValueFromInput(input, fallbackValue, options = {}) {
   const file = input.files?.[0];
   if (!file) {
     return fallbackValue;
@@ -2181,11 +2617,81 @@ async function imageValueFromInput(input, fallbackValue) {
     throw new Error("Please choose an image file.");
   }
 
+  if (options.storageBucket && supabaseClient) {
+    return uploadImageToStorage(file, options);
+  }
+
   if (file.size > MAX_INLINE_IMAGE_SIZE) {
     throw new Error("Image file must be 1 MB or smaller.");
   }
 
   return readFileAsDataUrl(file);
+}
+
+async function uploadImageToStorage(file, options) {
+  if (file.size > MAX_STORAGE_IMAGE_SIZE) {
+    throw new Error("Image file must be 5 MB or smaller.");
+  }
+
+  if (!supabaseClient?.storage) {
+    throw new Error("Supabase Storage is not available.");
+  }
+
+  const bucket = options.storageBucket;
+  const path = storageObjectPath(file, options);
+  const { error } = await supabaseClient.storage.from(bucket).upload(path, file, {
+    cacheControl: "31536000",
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) {
+    throw new Error(
+      `${error.message} Run supabase/setup-player-photo-storage.sql in Supabase SQL Editor, then retry the upload.`
+    );
+  }
+
+  const { data } = supabaseClient.storage.from(bucket).getPublicUrl(path);
+  if (!data?.publicUrl) {
+    throw new Error("Could not create public URL for uploaded image.");
+  }
+
+  return data.publicUrl;
+}
+
+function storageObjectPath(file, options) {
+  const folder = slugifyPathSegment(options.folder || "uploads");
+  const nameSource = options.recordId || options.nameHint || file.name || "player";
+  const name = slugifyPathSegment(nameSource);
+  const extension = imageFileExtension(file);
+  const uniquePart =
+    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  return `${folder}/${name}-${uniquePart}.${extension}`;
+}
+
+function slugifyPathSegment(value) {
+  return String(value || "image")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "image";
+}
+
+function imageFileExtension(file) {
+  const mimeExtensions = {
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+  };
+
+  if (mimeExtensions[file.type]) {
+    return mimeExtensions[file.type];
+  }
+
+  const fileExtension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return /^[a-z0-9]{2,5}$/.test(fileExtension) ? fileExtension : "jpg";
 }
 
 function readFileAsDataUrl(file) {

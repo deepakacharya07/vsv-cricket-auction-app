@@ -280,16 +280,26 @@ img {
   margin-top: 1rem;
 }
 
+.admin-bid-panel .panel-heading {
+  margin-top: 1.25rem;
+}
+
 .auction-support-grid {
   display: grid;
   gap: 1.5rem;
 }
 
 .teams-column .stack {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .players-page {
+  margin: 0 auto;
+  max-width: 1280px;
+  padding: 1.5rem 1rem;
+}
+
+.teams-page {
   margin: 0 auto;
   max-width: 1280px;
   padding: 1.5rem 1rem;
@@ -419,8 +429,11 @@ img {
   overflow: visible;
 }
 
-.player-pool-grid .player-card img {
-  height: 13.5rem;
+.player-pool-grid .player-card-photo {
+  background: var(--panel-soft);
+  height: 17rem;
+  object-fit: contain;
+  object-position: center;
 }
 
 .panel-title,
@@ -519,6 +532,22 @@ img {
   width: 2.35rem;
 }
 
+.team-logo.tiny {
+  height: 1.45rem;
+  width: 1.45rem;
+}
+
+.team-logo.player-card-team-logo {
+  border: 2px solid white;
+  box-shadow: 0 0.6rem 1.2rem rgb(0 0 0 / 22%);
+  height: 3.1rem;
+  position: absolute;
+  right: 1.5rem;
+  top: 1.5rem;
+  width: 3.1rem;
+  z-index: 1;
+}
+
 .team-logo img {
   height: 100%;
   object-fit: cover;
@@ -529,6 +558,10 @@ img {
   font-size: 0.8rem;
   font-weight: 950;
   line-height: 1;
+}
+
+.team-logo.tiny span {
+  font-size: 0.58rem;
 }
 
 .team-bid-main {
@@ -580,6 +613,7 @@ img {
 
 .player-card,
 .team-card,
+.team-roster-card,
 .panel,
 .next-panel {
   background: var(--panel);
@@ -591,6 +625,108 @@ img {
 
 .player-card {
   position: relative;
+}
+
+.team-roster-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.team-roster-header,
+.team-roster-title,
+.team-player-row,
+.team-player-meta {
+  align-items: center;
+  display: flex;
+}
+
+.team-roster-header {
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.team-roster-title {
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.team-roster-title h2 {
+  font-size: 1.12rem;
+  font-weight: 950;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-roster-title p {
+  color: var(--muted);
+  margin: 0.15rem 0 0;
+}
+
+.team-roster-count {
+  background: var(--panel-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  font-weight: 950;
+  min-width: 2.25rem;
+  padding: 0.3rem 0.65rem;
+  text-align: center;
+}
+
+.team-player-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.team-player-row {
+  background: var(--panel-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: 0.5rem;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.65rem;
+}
+
+.team-player-photo {
+  border-radius: 0.4rem;
+  flex: 0 0 auto;
+  height: 3.25rem;
+  object-fit: cover;
+  width: 3.25rem;
+}
+
+.team-player-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.team-player-main strong,
+.team-player-main small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-player-main strong {
+  font-weight: 950;
+}
+
+.team-player-main small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 0.18rem;
+}
+
+.team-player-meta {
+  flex: 0 0 auto;
+  gap: 0.45rem;
+  justify-content: flex-end;
 }
 
 .serial-badge {
@@ -619,10 +755,12 @@ img {
   margin-bottom: 0.35rem;
 }
 
-.player-card img {
+.player-card-photo {
+  background: var(--panel-soft);
   border-radius: 0.4rem;
   height: 9.5rem;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   width: 100%;
 }
 
@@ -636,6 +774,14 @@ img {
 
 .player-card-header > div {
   min-width: 0;
+}
+
+.player-card-badges {
+  align-items: flex-end;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .player-card h3,
@@ -710,6 +856,41 @@ img {
 .status-unsold {
   background: var(--danger);
   color: white;
+}
+
+.leadership-badge {
+  background: #f2c94c;
+  border-radius: 999px;
+  color: #2a2418;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 950;
+  max-width: 10rem;
+  overflow: hidden;
+  padding: 0.35rem 0.65rem;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.player-leadership-badge {
+  align-items: center;
+  max-width: none;
+  padding: 0.35rem 0.65rem;
+}
+
+.leadership-short-code {
+  line-height: 1;
+}
+
+.leadership-cell-text {
+  color: var(--green);
+  font-weight: 950;
+}
+
+.muted-value {
+  color: var(--muted);
 }
 
 .primary-button,
@@ -1077,7 +1258,9 @@ img {
 }
 
 .player-data-row {
-  grid-template-columns: 0.55fr minmax(0, 1.25fr) 0.78fr 0.58fr 0.58fr 0.76fr minmax(7rem, 1.6fr);
+  grid-template-columns:
+    0.5fr minmax(0, 1.15fr) 0.68fr 0.52fr 0.52fr 0.68fr
+    minmax(6rem, 0.9fr) minmax(7rem, 1.2fr);
 }
 
 .team-data-row {
@@ -1354,6 +1537,7 @@ img {
   .auction-page,
   .page-grid,
   .players-page,
+  .teams-page,
   .admin-shell,
   .admin-grid {
     padding-left: 1.5rem;
@@ -1392,6 +1576,10 @@ img {
 
   .player-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .team-roster-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .teams-column .stack {
@@ -1486,7 +1674,12 @@ img {
   }
 
   .auction-stage {
-    max-height: 34rem;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .stage-panel {
+    overflow-y: visible;
   }
 
   .lot-actions {
@@ -1574,6 +1767,15 @@ img {
 
   .player-data-row .row-actions button {
     flex: 1 1 0;
+  }
+
+  .team-player-row {
+    align-items: flex-start;
+  }
+
+  .team-player-meta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .team-editor-table {

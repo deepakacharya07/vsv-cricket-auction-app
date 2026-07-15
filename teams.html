@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Player Pool | VSV Cricket Auction</title>
+    <title>Teams | VSV Cricket Auction</title>
     <meta
       name="description"
-      content="Player pool for the VSV Cricket Auction."
+      content="Team rosters for the VSV Cricket Auction."
     />
     <link rel="icon" href="public/favicon.svg" />
     <link rel="stylesheet" href="styles.css" />
@@ -14,22 +14,22 @@
     <script src="supabase-config.js"></script>
     <script src="app.js" defer></script>
   </head>
-  <body data-page="players">
+  <body data-page="teams">
     <header class="topbar">
       <div class="topbar-inner">
         <a class="brand" href="index.html" aria-label="VSV Auction home">
           <span class="brand-mark" aria-hidden="true"></span>
           <span>
             <span class="eyebrow">Cricket player auction</span>
-            <strong>Player Pool</strong>
+            <strong>Teams</strong>
           </span>
         </a>
         <a class="header-center-logo" href="index.html" aria-label="VSV Auction home">
           <img alt="VSV logo" src="public/vsv-logo.png" />
         </a>
         <nav class="nav">
-          <a class="nav-link active" href="index.html">Players</a>
-          <a class="nav-link" href="teams.html">Teams</a>
+          <a class="nav-link" href="index.html">Players</a>
+          <a class="nav-link active" href="teams.html">Teams</a>
           <a class="nav-link" href="auction.html">Auction</a>
           <a class="nav-link" href="admin.html">Admin</a>
           <a class="nav-link" href="login.html">Login</a>
@@ -37,15 +37,15 @@
       </div>
     </header>
 
-    <main class="players-page">
+    <main class="teams-page">
       <section>
         <div class="section-heading">
           <div>
-            <h1>Player pool</h1>
-            <p>Available, sold, and unsold players for this auction.</p>
+            <h1>Teams</h1>
+            <p>Team rosters with assigned players, captains, and vice captains.</p>
           </div>
         </div>
-        <div id="player-grid" class="player-grid player-pool-grid"></div>
+        <div id="team-roster-grid" class="team-roster-grid"></div>
       </section>
     </main>
   </body>

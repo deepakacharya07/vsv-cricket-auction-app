@@ -25,6 +25,7 @@
         </a>
         <nav class="nav">
           <a class="nav-link" href="index.html">Players</a>
+          <a class="nav-link" href="teams.html">Teams</a>
           <a class="nav-link" href="auction.html">Auction</a>
           <button class="nav-link" id="logout-button" type="button">
             Logout
@@ -74,6 +75,20 @@
           </section>
 
           <section class="panel admin-bid-panel">
+            <div class="lot-metrics">
+              <article class="metric compact">
+                <span>Base price</span>
+                <strong id="admin-current-base">INR 0</strong>
+              </article>
+              <article class="metric compact">
+                <span>Current bid</span>
+                <strong id="admin-current-bid">INR 0</strong>
+              </article>
+              <article class="metric compact">
+                <span>Leading team</span>
+                <strong id="admin-current-leading">Open</strong>
+              </article>
+            </div>
             <h2 class="panel-heading">Place bid as team</h2>
             <div id="admin-team-bid-buttons" class="team-bid-grid"></div>
           </section>
@@ -182,6 +197,20 @@
                   <input id="new-jersey-number" inputmode="numeric" />
                 </label>
               </div>
+              <div class="form-grid">
+                <label>
+                  Team
+                  <select id="new-leadership-team"></select>
+                </label>
+                <label>
+                  Captain / vice captain
+                  <select id="new-leadership-role">
+                    <option value="">None</option>
+                    <option value="captain">Captain</option>
+                    <option value="vice_captain">Vice captain</option>
+                  </select>
+                </label>
+              </div>
               <button class="primary-button full" type="submit">Add player</button>
             </form>
           </section>
@@ -272,6 +301,21 @@
           <label>
             Jersey number
             <input inputmode="numeric" name="jerseyNumber" />
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Team
+            <select name="leadershipTeamId"></select>
+          </label>
+          <label>
+            Captain / vice captain
+            <select name="leadershipRole">
+              <option value="">None</option>
+              <option value="captain">Captain</option>
+              <option value="vice_captain">Vice captain</option>
+            </select>
           </label>
         </div>
 

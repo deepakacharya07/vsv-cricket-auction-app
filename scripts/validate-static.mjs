@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 const requiredFiles = [
   "index.html",
+  "teams.html",
   "login.html",
   "admin.html",
   "styles.css",

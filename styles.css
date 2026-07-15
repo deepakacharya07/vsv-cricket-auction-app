@@ -1158,34 +1158,9 @@ img {
   overflow-x: hidden;
 }
 
-.player-table-groups,
-.player-list-section {
+.player-table-groups {
   display: grid;
   gap: 1rem;
-}
-
-.player-list-section {
-  min-width: 0;
-}
-
-.player-list-heading {
-  align-items: end;
-  display: flex;
-  gap: 1rem;
-  justify-content: space-between;
-}
-
-.player-list-heading h3 {
-  font-size: 1.05rem;
-  font-weight: 950;
-  margin: 0;
-}
-
-.player-list-heading p {
-  color: var(--muted);
-  font-size: 0.88rem;
-  line-height: 1.4;
-  margin: 0.2rem 0 0;
 }
 
 .player-list-tools {
@@ -1193,6 +1168,14 @@ img {
   display: flex;
   flex: 0 0 auto;
   gap: 0.65rem;
+}
+
+.admin-player-actions {
+  align-items: end;
+}
+
+.admin-player-actions .secondary-button {
+  min-height: 2.55rem;
 }
 
 .player-search-field {
@@ -1352,10 +1335,12 @@ img {
   min-width: 0;
 }
 
-.active-lot img {
+.active-lot-photo {
+  background: var(--panel-soft);
   border-radius: 0.45rem;
-  height: clamp(12rem, 26vw, 16rem);
-  object-fit: cover;
+  height: clamp(14rem, 28vw, 18rem);
+  object-fit: contain;
+  object-position: center;
   width: 100%;
 }
 
@@ -1695,14 +1680,13 @@ img {
     overflow-y: auto;
   }
 
-  .player-list-heading {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .player-list-tools {
     align-items: stretch;
     width: 100%;
+  }
+
+  .admin-player-actions {
+    flex-wrap: wrap;
   }
 
   .player-search-field {

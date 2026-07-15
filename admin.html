@@ -101,9 +101,21 @@
                 <h2>Players</h2>
                 <p>Start lots and review current auction status.</p>
               </div>
-              <button class="secondary-button" disabled id="admin-reset" title="Reset demo is disabled for now" type="button">
-                Reset demo
-              </button>
+              <div class="player-list-tools admin-player-actions">
+                <label class="player-search-field admin-player-search-field">
+                  <span>Search</span>
+                  <input
+                    aria-label="Search all auction player tables"
+                    data-admin-player-search="all"
+                    placeholder="Search all players"
+                    type="search"
+                  />
+                </label>
+                <span id="admin-player-count">0</span>
+                <button class="secondary-button" disabled id="admin-reset" title="Reset demo is disabled for now" type="button">
+                  Reset demo
+                </button>
+              </div>
             </div>
             <div id="admin-player-table" class="player-table-groups"></div>
           </section>

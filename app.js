@@ -266,11 +266,7 @@ let realtimeRefreshTimer = null;
 let realtimeRefreshSuppressedUntil = 0;
 let authStateLoaded = false;
 const adminAccessCache = new Map();
-const adminPlayerSearchTerms = {
-  available: "",
-  unsold: "",
-  sold: "",
-};
+let adminPlayerSearchTerm = "";
 const adminPlayerRandomOrder = new Map();
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1124,7 +1120,7 @@ function renderAdminCurrentLot() {
 
   root.innerHTML = `
     <div class="active-lot">
-      <img alt="${escapeAttr(currentPlayer.name)}" src="${escapeAttr(currentPlayer.imageUrl)}" />
+      <img class="active-lot-photo" alt="${escapeAttr(currentPlayer.name)}" decoding="async" src="${escapeAttr(currentPlayer.imageUrl)}" />
       <div class="active-lot-info">
         <span class="serial-badge inline">${escapeHtml(playerSerial(currentPlayer))}</span>
         <h2>${escapeHtml(currentPlayer.name)}</h2>
@@ -1158,88 +1154,36 @@ function renderAdminPlayerTable() {
     return;
   }
 
-  const playerGroups = [
-    {
-      key: "available",
-      title: "Available / In bidding",
-      description: "Players ready to start or currently open for bidding.",
-      emptyMessage: "No available or in-bidding players.",
-      order: "in_bidding_first",
-      players: state.players.filter((player) =>
-        ["available", "in_bidding"].includes(player.status)
-      ),
-    },
-    {
-      key: "unsold",
-      title: "Marked unsold",
-      description: "Players marked as unsold.",
-      emptyMessage: "No players are marked unsold.",
-      players: state.players.filter((player) => player.status === "unsold"),
-    },
-    {
-      key: "sold",
-      title: "Sold",
-      description: "Players already sold to teams.",
-      emptyMessage: "No players have been sold yet.",
-      order: "id",
-      players: state.players.filter((player) => player.status === "sold"),
-    },
-  ];
-
-  root.innerHTML = playerGroups.map(renderAdminPlayerGroup).join("");
-}
-
-function renderAdminPlayerGroup(group) {
-  const query = adminPlayerSearchTerms[group.key] ?? "";
-  const filteredPlayers = filterAdminPlayers(group.players, query);
-  const players = orderAdminPlayerGroup({ ...group, players: filteredPlayers });
+  const query = adminPlayerSearchTerm;
+  const filteredPlayers = filterAdminPlayers(state.players, query);
+  const players = orderAdminAuctionPlayers(filteredPlayers);
   const visibleCount = filteredPlayers.length;
-  const countLabel = query ? `${visibleCount}/${group.players.length}` : String(group.players.length);
-  const emptyMessage = query ? "No players match your search." : group.emptyMessage;
+  const countLabel = query ? `${visibleCount}/${state.players.length}` : String(state.players.length);
+  const emptyMessage = query ? "No players match your search." : "No players found.";
 
-  return `
-    <section class="player-list-section">
-      <div class="player-list-heading">
-        <div>
-          <h3>${escapeHtml(group.title)}</h3>
-          <p>${escapeHtml(group.description)}</p>
-        </div>
-        <div class="player-list-tools">
-          <label class="player-search-field">
-            <span>Search</span>
-            <input
-              aria-label="Search ${escapeAttr(group.title)}"
-              data-admin-player-search="${escapeAttr(group.key)}"
-              placeholder="Search players"
-              type="search"
-              value="${escapeAttr(query)}"
-            />
-          </label>
-          <span>${escapeHtml(countLabel)}</span>
-        </div>
-      </div>
-      ${renderAdminPlayerRows(players, emptyMessage)}
-    </section>
-  `;
+  setText("admin-player-count", countLabel);
+  root.innerHTML = renderAdminPlayerRows(players, emptyMessage);
 }
 
-function orderAdminPlayerGroup(group) {
-  if (group.order === "id") {
-    return sortPlayersById(group.players);
-  }
+function orderAdminAuctionPlayers(players) {
+  const inBidding = sortPlayersById(
+    players.filter((player) => player.status === "in_bidding")
+  );
+  const available = sortPlayersByAdminRandomOrder(
+    players.filter((player) => player.status === "available")
+  );
+  const sold = sortPlayersById(players.filter((player) => player.status === "sold"));
+  const unsold = sortPlayersByAdminRandomOrder(
+    players.filter((player) => player.status === "unsold")
+  );
+  const otherStatuses = sortPlayersByAdminRandomOrder(
+    players.filter(
+      (player) =>
+        !["in_bidding", "available", "sold", "unsold"].includes(player.status)
+    )
+  );
 
-  if (group.order === "in_bidding_first") {
-    return [
-      ...sortPlayersByAdminRandomOrder(
-        group.players.filter((player) => player.status === "in_bidding")
-      ),
-      ...sortPlayersByAdminRandomOrder(
-        group.players.filter((player) => player.status !== "in_bidding")
-      ),
-    ];
-  }
-
-  return sortPlayersByAdminRandomOrder(group.players);
+  return [...inBidding, ...available, ...sold, ...unsold, ...otherStatuses];
 }
 
 function filterAdminPlayers(players, query) {
@@ -1691,19 +1635,18 @@ function bindAdminEvents() {
 
   document.addEventListener("input", (event) => {
     const input = event.target;
-    if (!(input instanceof HTMLInputElement) || !input.dataset.adminPlayerSearch) {
+    if (
+      !(input instanceof HTMLInputElement) ||
+      input.dataset.adminPlayerSearch !== "all"
+    ) {
       return;
     }
 
-    const searchKey = input.dataset.adminPlayerSearch;
     const cursorPosition = input.selectionStart ?? input.value.length;
-    adminPlayerSearchTerms[searchKey] = input.value;
+    adminPlayerSearchTerm = input.value;
     renderAdminPlayerTable();
 
-    const nextInput = [...document.querySelectorAll("[data-admin-player-search]")].find(
-      (element) =>
-        element instanceof HTMLInputElement && element.dataset.adminPlayerSearch === searchKey
-    );
+    const nextInput = document.querySelector("[data-admin-player-search='all']");
     if (nextInput instanceof HTMLInputElement) {
       nextInput.focus();
       nextInput.setSelectionRange(cursorPosition, cursorPosition);

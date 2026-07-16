@@ -547,14 +547,18 @@ img {
 }
 
 .team-logo.player-card-team-logo {
-  border: 2px solid white;
+  border: 3px solid white;
   box-shadow: 0 0.6rem 1.2rem rgb(0 0 0 / 22%);
-  height: 3.1rem;
+  height: 4.5rem;
   position: absolute;
-  right: 1.5rem;
-  top: 1.5rem;
-  width: 3.1rem;
+  right: 1.35rem;
+  top: 6.1rem;
+  width: 4.5rem;
   z-index: 1;
+}
+
+.player-pool-grid .team-logo.player-card-team-logo {
+  top: 13.5rem;
 }
 
 .team-logo img {

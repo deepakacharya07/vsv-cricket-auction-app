@@ -105,7 +105,7 @@ const seedState = {
       currentBid: DEFAULT_BASE_PRICE,
       status: "available",
       imageUrl:
-        "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=900&q=80",
+        "public/vishwaparva-season-2-logo.jpeg",
     },
     {
       id: "player-samar",
@@ -222,7 +222,7 @@ const seedState = {
       currentBid: DEFAULT_BASE_PRICE,
       status: "available",
       imageUrl:
-        "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=900&q=80",
+        "public/vishwaparva-season-2-logo.jpeg",
     },
     {
       id: "player-harsh",
@@ -564,7 +564,7 @@ function renderAuctionBoard() {
   if (currentImage) {
     currentImage.src =
       currentPlayer?.imageUrl ??
-      "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=900&q=80";
+      "public/vishwaparva-season-2-logo.jpeg";
   }
 
   renderAuctionActionState();

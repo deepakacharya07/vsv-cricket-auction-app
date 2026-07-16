@@ -1,18 +1,18 @@
 :root {
   --paper: #f8f5ee;
-  --panel: #ffffff;
-  --panel-soft: #fffaf0;
+  --panel: #edf6dd;
+  --panel-soft: #dbeec7;
   --ink: #1f2320;
-  --muted: #625c50;
-  --line: #d8d0bd;
-  --line-soft: #eee7d7;
+  --muted: #4f5c45;
+  --line: #aac59a;
+  --line-soft: #c7dcba;
   --green: #176b48;
   --green-dark: #11543a;
   --amber: #f2c94c;
   --rust: #9a4815;
   --danger: #a03a2b;
   --blue: #3867a6;
-  --shadow: 0 8px 28px rgb(42 36 24 / 7%);
+  --shadow: 0 12px 34px rgb(5 18 12 / 16%);
 }
 
 * {
@@ -20,7 +20,10 @@
 }
 
 body {
-  background: var(--paper);
+  background:
+    linear-gradient(rgb(7 20 17 / 56%), rgb(7 20 17 / 44%)),
+    url("public/cricket-ground-1.png") center / cover fixed no-repeat,
+    var(--paper);
   color: var(--ink);
   font-family:
     Arial,
@@ -191,7 +194,7 @@ img {
 
 .metric {
   background: var(--panel);
-  border: 1px solid #e3dccd;
+  border: 1px solid var(--line);
   border-radius: 0.5rem;
   box-shadow: var(--shadow);
   min-width: 0;
@@ -243,7 +246,7 @@ img {
 }
 
 .admin-tabs {
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid rgb(255 255 255 / 32%);
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
@@ -253,7 +256,7 @@ img {
   background: transparent;
   border: 0;
   border-bottom: 3px solid transparent;
-  color: var(--muted);
+  color: rgb(255 255 255 / 76%);
   cursor: pointer;
   font-weight: 950;
   min-height: 2.75rem;
@@ -261,8 +264,8 @@ img {
 }
 
 .admin-tab[aria-selected="true"] {
-  border-bottom-color: var(--green);
-  color: var(--ink);
+  border-bottom-color: var(--amber);
+  color: white;
 }
 
 .admin-tab-panel[hidden] {
@@ -299,6 +302,31 @@ img {
   padding: 1.5rem 1rem;
 }
 
+.players-page > section > .section-heading {
+  color: white;
+  text-shadow: 0 0.2rem 0.8rem rgb(0 0 0 / 44%);
+}
+
+.players-page > section > .section-heading p,
+.teams-page > section > .section-heading p,
+.admin-player-row .section-heading p,
+.admin-grid > .admin-column > section > .section-heading p {
+  color: rgb(255 255 255 / 84%);
+}
+
+.teams-page > section > .section-heading,
+.admin-player-row .section-heading,
+.admin-grid > .admin-column > section > .section-heading,
+.auction-support-grid > section:not(.metric-row):not(.next-panel) > .side-title {
+  color: white;
+  text-shadow: 0 0.2rem 0.8rem rgb(0 0 0 / 44%);
+}
+
+.auction-support-grid > section:not(.metric-row):not(.next-panel) .empty-state {
+  color: rgb(255 255 255 / 84%);
+  text-shadow: 0 0.2rem 0.8rem rgb(0 0 0 / 44%);
+}
+
 .teams-page {
   margin: 0 auto;
   max-width: 1280px;
@@ -324,7 +352,7 @@ img {
 
 .auction-stage {
   display: grid;
-  max-height: 28rem;
+  max-height: none;
 }
 
 .stage-image,
@@ -332,6 +360,10 @@ img {
   background: var(--green);
   min-height: 340px;
   position: relative;
+}
+
+.auction-stage .stage-image {
+  min-height: 260px;
 }
 
 .stage-image img,
@@ -422,7 +454,7 @@ img {
   gap: 1.5rem;
   justify-content: space-between;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: visible;
   padding: 1rem;
 }
 
@@ -432,6 +464,10 @@ img {
 .team-summary-grid {
   display: grid;
   gap: 0.75rem;
+}
+
+#team-bid-buttons.team-bid-grid {
+  grid-template-columns: 1fr;
 }
 
 .player-pool-grid {
@@ -458,7 +494,7 @@ img {
 .next-player-button {
   align-items: center;
   background: var(--panel);
-  border: 1px solid #e1dacb;
+  border: 1px solid var(--line);
   border-radius: 0.5rem;
   color: inherit;
   cursor: pointer;
@@ -481,13 +517,50 @@ img {
   transform: translateY(-1px);
 }
 
+.team-bid-button.bid-limit-near {
+  background: #fff1a6;
+  border-color: #d99b16;
+  box-shadow: 0 0.55rem 1.25rem rgb(102 69 0 / 14%);
+}
+
+.team-bid-button.bid-limit-near:disabled {
+  opacity: 1;
+}
+
+.team-bid-button.bid-limit-near:hover {
+  background: #ffe37a;
+  border-color: #b97800;
+}
+
+.team-bid-button.bid-limit-near .team-bid-main span {
+  color: #614700;
+}
+
+.team-bid-button.bid-limit-reached,
+.team-bid-button.bid-limit-reached:disabled {
+  background: #b42318;
+  border-color: #7f1d1d;
+  color: white;
+  opacity: 1;
+}
+
+.team-bid-button.bid-limit-reached:hover {
+  background: #b42318;
+  border-color: #7f1d1d;
+  transform: none;
+}
+
+.team-bid-button.bid-limit-reached .team-bid-main span {
+  color: rgb(255 255 255 / 78%);
+}
+
 .next-player-button.passive {
   cursor: default;
 }
 
 .next-player-button.passive:hover {
   background: var(--panel);
-  border-color: #e1dacb;
+  border-color: var(--line);
   transform: none;
 }
 
@@ -526,7 +599,7 @@ img {
   align-items: center;
   background: var(--team-color, var(--green));
   border: 1px solid rgb(255 255 255 / 56%);
-  border-radius: 999px;
+  border-radius: 20px;
   color: white;
   display: inline-flex;
   flex: 0 0 auto;
@@ -555,6 +628,12 @@ img {
   top: 6.1rem;
   width: 4.5rem;
   z-index: 1;
+}
+
+.team-logo.sold-dialog-team-logo {
+  box-shadow: 0 0.55rem 1.1rem rgb(0 0 0 / 18%);
+  height: 4.35rem;
+  width: 4.35rem;
 }
 
 .player-pool-grid .team-logo.player-card-team-logo {
@@ -638,6 +717,38 @@ img {
 
 .player-card {
   position: relative;
+}
+
+.player-pool-grid .player-card {
+  background:
+    linear-gradient(145deg, rgb(4 10 42 / 92%), rgb(8 28 90 / 82%), rgb(4 7 30 / 94%)),
+    url("public/player-card-bg.jpeg") center / cover,
+    var(--panel);
+  border-color: rgb(255 255 255 / 22%);
+  color: white;
+  box-shadow: 0 1rem 2.4rem rgb(0 0 0 / 26%);
+}
+
+.player-pool-grid .player-card h3,
+.player-pool-grid .player-card .info strong {
+  color: white;
+}
+
+.player-pool-grid .player-card-header p {
+  color: rgb(255 255 255 / 74%);
+}
+
+.player-pool-grid .player-card-photo {
+  background: rgb(255 255 255 / 10%);
+}
+
+.player-pool-grid .info {
+  background: rgb(255 255 255 / 12%);
+  border: 1px solid rgb(255 255 255 / 16%);
+}
+
+.player-pool-grid .info span {
+  color: rgb(255 255 255 / 66%);
 }
 
 .team-roster-grid {
@@ -818,7 +929,8 @@ img {
 }
 
 .info {
-  background: #f5efe1;
+  background: var(--panel-soft);
+  border: 1px solid var(--line-soft);
   border-radius: 0.45rem;
   min-width: 0;
   padding: 0.6rem 0.7rem;
@@ -1068,7 +1180,7 @@ img {
 
 .credential-box {
   background: var(--panel-soft);
-  border: 1px solid #e3dccd;
+  border: 1px solid var(--line);
   border-radius: 0.5rem;
   display: grid;
   gap: 0.35rem;
@@ -1111,6 +1223,28 @@ img {
 .form-grid {
   display: grid;
   gap: 1rem;
+}
+
+.danger-zone {
+  background: rgb(160 58 43 / 9%);
+  border: 1px solid rgb(160 58 43 / 28%);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+}
+
+.checkbox-line {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 0.6rem;
+}
+
+.form-stack .checkbox-line input[type="checkbox"] {
+  min-height: 1.15rem;
+  padding: 0;
+  width: 1.15rem;
 }
 
 .form-error {
@@ -1253,6 +1387,10 @@ img {
   z-index: 2;
 }
 
+.player-table .data-row {
+  padding: 0.55rem 0.75rem;
+}
+
 .player-data-row {
   grid-template-columns:
     0.5fr minmax(0, 1.15fr) 0.68fr 0.52fr 0.52fr 0.68fr
@@ -1274,9 +1412,9 @@ img {
 .player-cell img {
   border-radius: 0.45rem;
   flex: 0 0 auto;
-  height: 3rem;
+  height: 1.85rem;
   object-fit: cover;
-  width: 3rem;
+  width: 1.85rem;
 }
 
 .player-cell small {
@@ -1324,8 +1462,16 @@ img {
 
 .row-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: flex-end;
+}
+
+.form-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin: -0.25rem 0 0;
 }
 
 .compact-button {
@@ -1348,9 +1494,68 @@ img {
   min-width: 0;
 }
 
-.active-lot-photo {
+.active-lot-image {
   background: var(--panel-soft);
   border-radius: 0.45rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.active-lot-id-badge {
+  left: 0.7rem;
+  position: absolute;
+  top: 0.7rem;
+  z-index: 1;
+}
+
+.active-lot-title-row {
+  align-items: start;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.active-lot-title-row h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.active-lot-title-row .activity-amount {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.active-lot-bid-form {
+  background: var(--panel-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.active-lot-bid-form .form-grid {
+  align-items: end;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.55fr);
+}
+
+.active-lot-bid-form label {
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.active-lot-bid-form select {
+  height: 2.45rem;
+  min-height: 0;
+  width: 100%;
+}
+
+.active-lot-photo {
+  display: block;
   height: clamp(14rem, 28vw, 18rem);
   object-fit: contain;
   object-position: center;
@@ -1468,6 +1673,112 @@ img {
   line-height: 1.4;
 }
 
+.sold-player-dialog {
+  width: min(760px, calc(100vw - 2rem));
+}
+
+.sold-player-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.sold-player-summary {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(13rem, 0.9fr) minmax(0, 1.1fr);
+}
+
+.sold-player-photo-wrap {
+  background: var(--panel-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: 0.5rem;
+  min-height: 19rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.sold-player-photo-wrap .serial-badge {
+  left: 0.75rem;
+  position: absolute;
+  top: 0.75rem;
+  z-index: 1;
+}
+
+.sold-player-photo-wrap img {
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  width: 100%;
+}
+
+.sold-player-details {
+  align-content: start;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.sold-player-team {
+  align-items: center;
+  background: var(--panel-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: 0.5rem;
+  display: flex;
+  gap: 0.85rem;
+  padding: 0.85rem;
+}
+
+.sold-player-team div {
+  min-width: 0;
+}
+
+.sold-player-team span,
+.sold-player-fact span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.sold-player-team strong {
+  display: block;
+  font-size: 1.3rem;
+  font-weight: 950;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.sold-player-team small {
+  color: var(--muted);
+  display: block;
+  line-height: 1.35;
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.sold-player-facts {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sold-player-fact {
+  background: var(--panel-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.8rem;
+}
+
+.sold-player-fact strong {
+  font-size: 1.05rem;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
 .dialog-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1577,7 +1888,7 @@ img {
   }
 
   .team-roster-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .teams-column .stack {
@@ -1671,6 +1982,10 @@ img {
     min-height: 300px;
   }
 
+  .auction-stage .stage-image {
+    min-height: 230px;
+  }
+
   .auction-stage {
     max-height: none;
     overflow: visible;
@@ -1681,6 +1996,10 @@ img {
   }
 
   .lot-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .active-lot-bid-form .form-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1724,7 +2043,7 @@ img {
     box-shadow: var(--shadow);
     gap: 0.65rem;
     grid-template-columns: 1fr;
-    padding: 0.9rem;
+    padding: 0.75rem;
   }
 
   .player-cell {
@@ -1732,8 +2051,8 @@ img {
   }
 
   .player-cell img {
-    height: 3.5rem;
-    width: 3.5rem;
+    height: 2.1rem;
+    width: 2.1rem;
   }
 
   .player-data-row .mobile-field {
@@ -1829,6 +2148,18 @@ img {
 
   .dialog-header .compact-button {
     width: 100%;
+  }
+
+  .sold-player-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .sold-player-photo-wrap {
+    min-height: 16.5rem;
+  }
+
+  .sold-player-facts {
+    grid-template-columns: 1fr;
   }
 
   .dialog-actions {

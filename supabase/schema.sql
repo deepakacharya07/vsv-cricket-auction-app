@@ -4,6 +4,7 @@ create table if not exists public.auction_settings (
   id boolean primary key default true check (id),
   bid_increment numeric not null default 50 check (bid_increment > 0),
   default_base_price numeric not null default 50 check (default_base_price > 0),
+  total_players_per_team integer not null default 11 check (total_players_per_team > 0),
   updated_at timestamptz not null default now()
 );
 
@@ -11,14 +12,27 @@ alter table public.auction_settings
   add column if not exists default_base_price numeric not null default 50;
 
 alter table public.auction_settings
+  add column if not exists total_players_per_team integer not null default 11;
+
+alter table public.auction_settings
   alter column bid_increment set default 50,
-  alter column default_base_price set default 50;
+  alter column default_base_price set default 50,
+  alter column total_players_per_team set default 11;
 
 do $$
 begin
   alter table public.auction_settings
     add constraint auction_settings_default_base_price_check
     check (default_base_price > 0);
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter table public.auction_settings
+    add constraint auction_settings_total_players_per_team_check
+    check (total_players_per_team > 0);
 exception
   when duplicate_object then null;
 end $$;
@@ -419,7 +433,12 @@ declare
   v_player public.players%rowtype;
   v_team public.teams%rowtype;
   v_increment numeric;
+  v_default_base_price numeric;
+  v_total_players_per_team integer;
   v_next_amount numeric;
+  v_roster_count_after_bid integer;
+  v_required_players_after_bid integer;
+  v_max_bid numeric;
 begin
   perform public.require_admin();
 
@@ -441,9 +460,20 @@ begin
     raise exception 'Team not found';
   end if;
 
-  select bid_increment into v_increment
+  select
+    bid_increment,
+    default_base_price,
+    total_players_per_team
+  into
+    v_increment,
+    v_default_base_price,
+    v_total_players_per_team
   from public.auction_settings
   where id = true;
+
+  v_increment := coalesce(v_increment, 50);
+  v_default_base_price := coalesce(v_default_base_price, 50);
+  v_total_players_per_team := coalesce(v_total_players_per_team, 11);
 
   if v_player.current_team_id is null then
     v_next_amount := greatest(v_player.current_bid, v_player.base_price);
@@ -451,8 +481,35 @@ begin
     v_next_amount := greatest(v_player.current_bid + v_increment, v_player.base_price);
   end if;
 
-  if v_team.purse - v_team.spent < v_next_amount then
-    raise exception 'Team purse is not enough for this bid';
+  select count(distinct roster.player_id) into v_roster_count_after_bid
+  from (
+    select id as player_id
+    from public.players
+    where sold_team_id = p_team_id
+       or (status = 'in_bidding' and current_team_id = p_team_id and id <> p_player_id)
+    union all
+    select p_player_id
+    union all
+    select captain_player_id
+    from public.teams
+    where id = p_team_id and captain_player_id is not null
+    union all
+    select vice_captain_player_id
+    from public.teams
+    where id = p_team_id and vice_captain_player_id is not null
+  ) roster;
+
+  if v_roster_count_after_bid > v_total_players_per_team then
+    raise exception 'Team already has the configured total players';
+  end if;
+
+  v_required_players_after_bid :=
+    greatest(v_total_players_per_team - v_roster_count_after_bid, 0);
+  v_max_bid :=
+    greatest(v_team.purse - v_team.spent - (v_required_players_after_bid * v_default_base_price), 0);
+
+  if v_next_amount > v_max_bid then
+    raise exception 'Team maximum bid is %', v_max_bid;
   end if;
 
   update public.players
@@ -465,10 +522,129 @@ begin
 end;
 $$;
 
+create or replace function public.set_active_lot_bid(
+  p_player_id uuid,
+  p_team_id uuid,
+  p_amount numeric
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_player public.players%rowtype;
+  v_team public.teams%rowtype;
+  v_increment numeric;
+  v_default_base_price numeric;
+  v_total_players_per_team integer;
+  v_roster_count_after_bid integer;
+  v_required_players_after_bid integer;
+  v_minimum_bid numeric;
+  v_max_bid numeric;
+  v_effective_max_bid numeric;
+begin
+  perform public.require_admin();
+
+  if p_amount is null or p_amount < 0 then
+    raise exception 'Bid amount must be 0 or greater';
+  end if;
+
+  select * into v_player
+  from public.players
+  where id = p_player_id
+    and status = 'in_bidding'
+  for update;
+
+  if not found then
+    raise exception 'Bid can be set only for the active lot';
+  end if;
+
+  select * into v_team
+  from public.teams
+  where id = p_team_id
+  for update;
+
+  if not found then
+    raise exception 'Team not found';
+  end if;
+
+  select
+    bid_increment,
+    default_base_price,
+    total_players_per_team
+  into
+    v_increment,
+    v_default_base_price,
+    v_total_players_per_team
+  from public.auction_settings
+  where id = true;
+
+  v_increment := coalesce(v_increment, 50);
+  v_default_base_price := coalesce(v_default_base_price, 50);
+  v_total_players_per_team := coalesce(v_total_players_per_team, 11);
+
+  if mod(p_amount, v_increment) <> 0 then
+    raise exception 'Bid amount must be a multiple of %', v_increment;
+  end if;
+
+  v_minimum_bid := ceil(v_player.base_price / v_increment) * v_increment;
+
+  if p_amount < v_minimum_bid then
+    raise exception 'Bid amount must be at least %', v_minimum_bid;
+  end if;
+
+  select count(distinct roster.player_id) into v_roster_count_after_bid
+  from (
+    select id as player_id
+    from public.players
+    where sold_team_id = p_team_id
+       or (status = 'in_bidding' and current_team_id = p_team_id and id <> p_player_id)
+    union all
+    select p_player_id
+    union all
+    select captain_player_id
+    from public.teams
+    where id = p_team_id and captain_player_id is not null
+    union all
+    select vice_captain_player_id
+    from public.teams
+    where id = p_team_id and vice_captain_player_id is not null
+  ) roster;
+
+  if v_roster_count_after_bid > v_total_players_per_team then
+    raise exception 'Team already has the configured total players';
+  end if;
+
+  v_required_players_after_bid :=
+    greatest(v_total_players_per_team - v_roster_count_after_bid, 0);
+  v_max_bid := greatest(
+    v_team.purse - v_team.spent - (v_required_players_after_bid * v_default_base_price),
+    0
+  );
+  v_effective_max_bid := least(v_max_bid, 600);
+
+  if p_amount > v_effective_max_bid then
+    raise exception 'Maximum bid for % is %', v_team.name, v_effective_max_bid;
+  end if;
+
+  update public.players
+  set current_bid = p_amount,
+      current_team_id = p_team_id
+  where id = p_player_id;
+
+  insert into public.bids (player_id, team_id, amount, created_by)
+  values (p_player_id, p_team_id, p_amount, auth.uid());
+end;
+$$;
+
+drop function if exists public.update_auction_config(numeric, numeric, numeric);
+
 create or replace function public.update_auction_config(
   p_default_base_price numeric,
   p_bid_increment numeric,
-  p_team_purse numeric
+  p_team_purse numeric,
+  p_total_players_per_team integer
 )
 returns void
 language plpgsql
@@ -490,6 +666,10 @@ begin
     raise exception 'Team purse must be greater than 0';
   end if;
 
+  if p_total_players_per_team <= 0 then
+    raise exception 'Total players per team must be greater than 0';
+  end if;
+
   if exists (
     select 1
     from public.teams
@@ -498,21 +678,47 @@ begin
     raise exception 'Team purse cannot be less than current spending';
   end if;
 
+  if exists (
+    select 1
+    from public.teams t
+    cross join lateral (
+      select count(distinct roster.player_id) as player_count
+      from (
+        select p.id as player_id
+        from public.players p
+        where p.sold_team_id = t.id
+           or (p.status = 'in_bidding' and p.current_team_id = t.id)
+        union all
+        select t.captain_player_id
+        where t.captain_player_id is not null
+        union all
+        select t.vice_captain_player_id
+        where t.vice_captain_player_id is not null
+      ) roster
+    ) roster_count
+    where roster_count.player_count > p_total_players_per_team
+  ) then
+    raise exception 'Total players per team cannot be less than current roster count';
+  end if;
+
   insert into public.auction_settings (
     id,
     bid_increment,
     default_base_price,
+    total_players_per_team,
     updated_at
   )
   values (
     true,
     p_bid_increment,
     p_default_base_price,
+    p_total_players_per_team,
     now()
   )
   on conflict (id)
   do update set bid_increment = excluded.bid_increment,
                 default_base_price = excluded.default_base_price,
+                total_players_per_team = excluded.total_players_per_team,
                 updated_at = excluded.updated_at;
 
   update public.teams
@@ -800,6 +1006,77 @@ begin
 end;
 $$;
 
+create or replace function public.reset_auction_except_captains(
+  p_keep_vice_captains boolean default false
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.require_admin();
+
+  with retained_players as (
+    select captain_player_id as player_id
+    from public.teams
+    where captain_player_id is not null
+    union
+    select vice_captain_player_id
+    from public.teams
+    where p_keep_vice_captains
+      and vice_captain_player_id is not null
+  )
+  delete from public.bids b
+  where not exists (
+    select 1
+    from retained_players r
+    where r.player_id = b.player_id
+  );
+
+  with retained_players as (
+    select captain_player_id as player_id
+    from public.teams
+    where captain_player_id is not null
+    union
+    select vice_captain_player_id
+    from public.teams
+    where p_keep_vice_captains
+      and vice_captain_player_id is not null
+  )
+  update public.players p
+  set status = 'available',
+      current_team_id = null,
+      sold_team_id = null,
+      current_bid = base_price
+  where not exists (
+    select 1
+    from retained_players r
+    where r.player_id = p.id
+  );
+
+  with retained_players as (
+    select captain_player_id as player_id
+    from public.teams
+    where captain_player_id is not null
+    union
+    select vice_captain_player_id
+    from public.teams
+    where p_keep_vice_captains
+      and vice_captain_player_id is not null
+  )
+  update public.teams t
+  set spent = coalesce((
+    select sum(p.current_bid)
+    from public.players p
+    join retained_players r on r.player_id = p.id
+    where p.status = 'sold'
+      and p.sold_team_id = t.id
+  ), 0)
+  where true;
+end;
+$$;
+
 create or replace function public.reset_demo_data()
 returns void
 language plpgsql
@@ -818,11 +1095,18 @@ begin
   delete from public.teams
   where true;
 
-  insert into public.auction_settings (id, bid_increment, default_base_price, updated_at)
-  values (true, 50, 50, now())
+  insert into public.auction_settings (
+    id,
+    bid_increment,
+    default_base_price,
+    total_players_per_team,
+    updated_at
+  )
+  values (true, 50, 50, 11, now())
   on conflict (id)
   do update set bid_increment = excluded.bid_increment,
                 default_base_price = excluded.default_base_price,
+                total_players_per_team = excluded.total_players_per_team,
                 updated_at = excluded.updated_at;
 
   insert into public.teams (id, name, owner, purse, spent, color, logo_url, created_at)
@@ -837,8 +1121,13 @@ begin
 end;
 $$;
 
-insert into public.auction_settings (id, bid_increment, default_base_price)
-values (true, 50, 50)
+insert into public.auction_settings (
+  id,
+  bid_increment,
+  default_base_price,
+  total_players_per_team
+)
+values (true, 50, 50, 11)
 on conflict (id) do nothing;
 
 grant usage on schema public to anon, authenticated;
@@ -849,31 +1138,35 @@ grant select on public.bids to anon, authenticated;
 grant select on public.admin_users to authenticated;
 
 revoke execute on function public.place_bid(uuid, uuid) from public;
+revoke execute on function public.set_active_lot_bid(uuid, uuid, numeric) from public;
 revoke execute on function public.add_player(text, text, text, text, integer, numeric, text, text, text) from public;
 revoke execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text, text, text) from public;
 revoke execute on function public.start_player(uuid) from public;
 revoke execute on function public.sell_player(uuid) from public;
 revoke execute on function public.mark_unsold(uuid) from public;
 revoke execute on function public.make_player_available(uuid) from public;
-revoke execute on function public.update_auction_config(numeric, numeric, numeric) from public;
+revoke execute on function public.update_auction_config(numeric, numeric, numeric, integer) from public;
 revoke execute on function public.add_team(text, text, text, text) from public;
 revoke execute on function public.update_team(uuid, text, text, text, text) from public;
 revoke execute on function public.set_team_captains(uuid, uuid, uuid) from public;
 revoke execute on function public.delete_team(uuid) from public;
+revoke execute on function public.reset_auction_except_captains(boolean) from public;
 revoke execute on function public.reset_demo_data() from public;
 
 grant execute on function public.place_bid(uuid, uuid) to authenticated;
+grant execute on function public.set_active_lot_bid(uuid, uuid, numeric) to authenticated;
 grant execute on function public.add_player(text, text, text, text, integer, numeric, text, text, text) to authenticated;
 grant execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text, text, text) to authenticated;
 grant execute on function public.start_player(uuid) to authenticated;
 grant execute on function public.sell_player(uuid) to authenticated;
 grant execute on function public.mark_unsold(uuid) to authenticated;
 grant execute on function public.make_player_available(uuid) to authenticated;
-grant execute on function public.update_auction_config(numeric, numeric, numeric) to authenticated;
+grant execute on function public.update_auction_config(numeric, numeric, numeric, integer) to authenticated;
 grant execute on function public.add_team(text, text, text, text) to authenticated;
 grant execute on function public.update_team(uuid, text, text, text, text) to authenticated;
 grant execute on function public.set_team_captains(uuid, uuid, uuid) to authenticated;
 grant execute on function public.delete_team(uuid) to authenticated;
+grant execute on function public.reset_auction_except_captains(boolean) to authenticated;
 grant execute on function public.reset_demo_data() to authenticated;
 
 alter table public.auction_settings replica identity full;

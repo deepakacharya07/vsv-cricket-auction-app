@@ -9,10 +9,10 @@
       content="A cricket player auction board with teams, bids, and admin controls."
     />
     <link rel="icon" href="public/favicon.svg" />
-    <link rel="stylesheet" href="styles.css?v=20260716-2" />
+    <link rel="stylesheet" href="styles.css?v=20260717-22" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js?v=20260716-2"></script>
-    <script src="app.js?v=20260716-2" defer></script>
+    <script src="supabase-config.js?v=20260717-22"></script>
+    <script src="app.js?v=20260717-22" defer></script>
   </head>
   <body data-page="auction">
     <header class="topbar">
@@ -100,5 +100,21 @@
         </section>
       </section>
     </main>
+
+    <dialog id="sold-player-dialog" class="edit-dialog sold-player-dialog">
+      <div class="edit-dialog-card sold-player-card">
+        <div class="dialog-header">
+          <div>
+            <span class="eyebrow">Sold</span>
+            <h2 id="sold-player-title">Player sold</h2>
+            <p id="sold-player-subtitle"></p>
+          </div>
+          <button class="secondary-button compact-button" data-sold-dialog-close type="button">
+            Close
+          </button>
+        </div>
+        <div id="sold-player-summary" class="sold-player-summary"></div>
+      </div>
+    </dialog>
   </body>
 </html>

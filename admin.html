@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Auction Admin | VSV Cricket Auction</title>
     <link rel="icon" href="public/favicon.svg" />
-    <link rel="stylesheet" href="styles.css?v=20260716-2" />
+    <link rel="stylesheet" href="styles.css?v=20260717-22" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js?v=20260716-2"></script>
-    <script src="app.js?v=20260716-2" defer></script>
+    <script src="supabase-config.js?v=20260717-22"></script>
+    <script src="app.js?v=20260717-22" defer></script>
   </head>
   <body data-page="admin">
     <header class="topbar">
@@ -149,11 +149,26 @@
                   <input id="settings-bid-increment" min="1" step="1" type="number" value="50" />
                 </label>
               </div>
-              <label>
-                Team purse
-                <input id="settings-team-purse" min="1" step="1" type="number" value="5000" />
-              </label>
+              <div class="form-grid">
+                <label>
+                  Team purse
+                  <input id="settings-team-purse" min="1" step="1" type="number" value="5000" />
+                </label>
+                <label>
+                  Total players per team
+                  <input id="settings-total-players" min="1" step="1" type="number" value="11" />
+                </label>
+              </div>
               <button class="secondary-button full" type="submit">Save settings</button>
+              <div class="danger-zone">
+                <label class="checkbox-line">
+                  <input id="reset-keep-vice-captains" type="checkbox" />
+                  Keep vice captains also
+                </label>
+                <button class="danger-button full" id="reset-except-captains" type="button">
+                  Reset auction except captains
+                </button>
+              </div>
             </form>
           </section>
 
@@ -358,6 +373,30 @@
         <div class="dialog-actions">
           <button class="secondary-button" data-stop-bidding-close type="button">Cancel</button>
           <button class="danger-button" type="submit">Stop bidding</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="reset-auction-dialog" class="edit-dialog confirm-dialog">
+      <form id="reset-auction-confirm-form" class="edit-dialog-card form-stack">
+        <div class="dialog-header">
+          <div>
+            <h2>Reset auction?</h2>
+            <p id="reset-auction-confirm-copy"></p>
+          </div>
+          <button class="secondary-button compact-button" data-reset-auction-close type="button">
+            Close
+          </button>
+        </div>
+
+        <div class="confirmation-summary">
+          <strong>Players and bids will be reset</strong>
+          <span id="reset-auction-confirm-detail"></span>
+        </div>
+
+        <div class="dialog-actions">
+          <button class="secondary-button" data-reset-auction-close type="button">Cancel</button>
+          <button class="danger-button" type="submit">Reset auction</button>
         </div>
       </form>
     </dialog>

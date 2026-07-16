@@ -3,8 +3,11 @@ const ADMIN_AUTH_KEY = "vsv-auction-admin-auth";
 const DEFAULT_BID_INCREMENT = 50;
 const DEFAULT_TEAM_PURSE = 5000;
 const DEFAULT_BASE_PRICE = 50;
+const DEFAULT_TOTAL_PLAYERS_PER_TEAM = 11;
+const ACTIVE_LOT_BID_AMOUNT_CAP = 600;
 const RECENT_BID_LIMIT = 25;
 const REALTIME_REFRESH_SUPPRESS_MS = 1200;
+const SOLD_DIALOG_AUTO_CLOSE_MS = 5000;
 const RESET_DEMO_ENABLED = false;
 const MAX_INLINE_IMAGE_SIZE = 1024 * 1024;
 const MAX_STORAGE_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -22,6 +25,7 @@ const DEMO_ADMIN = {
 const seedState = {
   bidIncrement: DEFAULT_BID_INCREMENT,
   defaultBasePrice: DEFAULT_BASE_PRICE,
+  totalPlayersPerTeam: DEFAULT_TOTAL_PLAYERS_PER_TEAM,
   currentPlayerId: "player-aryan",
   teams: [
     {
@@ -264,6 +268,8 @@ let adminEventsBound = false;
 let auctionEventsBound = false;
 let realtimeRefreshTimer = null;
 let realtimeRefreshSuppressedUntil = 0;
+let soldDialogTimer = null;
+let soldDialogEventsBound = false;
 let authStateLoaded = false;
 const adminAccessCache = new Map();
 let adminPlayerSearchTerm = "";
@@ -285,6 +291,7 @@ async function bootstrapApp() {
   if (page === "auction") {
     renderAuctionBoard();
     bindAuctionEvents();
+    bindSoldPlayerDialogEvents();
   }
 
   if (page === "players") {
@@ -388,6 +395,9 @@ async function loadRemoteState({ includePlayerImages = true } = {}) {
     defaultBasePrice: Number(
       settingsResult.data?.default_base_price ?? DEFAULT_BASE_PRICE
     ),
+    totalPlayersPerTeam: Number(
+      settingsResult.data?.total_players_per_team ?? DEFAULT_TOTAL_PLAYERS_PER_TEAM
+    ),
     currentPlayerId: inBidding?.id,
     teams: (teamsResult.data ?? []).map(dbTeamToState),
     players,
@@ -426,8 +436,13 @@ function scheduleRemoteRefresh() {
     }
 
     try {
+      const previousPlayers = state.players;
       await loadRemoteState({ includePlayerImages: false });
+      const soldAnnouncement = soldPlayerAnnouncementFromStateChange(previousPlayers);
       renderCurrentPage();
+      if (document.body.dataset.page === "auction" && soldAnnouncement) {
+        showSoldPlayerDialog(soldAnnouncement.player, soldAnnouncement.team);
+      }
     } catch (error) {
       console.error("Realtime refresh failed.", error);
     }
@@ -676,20 +691,31 @@ function renderTeamBidButtons(currentPlayer) {
     .map((team) => {
       const remaining = team.purse - team.spent;
       const nextBid = getNextBidAmount(currentPlayer);
-      const canBid = remaining >= nextBid && currentUserIsAdmin;
+      const maxBid = maxTeamBidForPlayer(team, currentPlayer);
+      const isAtMaxBid = nextBid > maxBid;
+      const isNearMaxBid =
+        !isAtMaxBid && maxBid - nextBid <= Number(state.bidIncrement ?? DEFAULT_BID_INCREMENT);
+      const bidLimitClass = isAtMaxBid
+        ? " bid-limit-reached"
+        : isNearMaxBid
+          ? " bid-limit-near"
+          : "";
+      const canBid = currentUserIsAdmin && !isAtMaxBid;
       const title = !currentUserIsAdmin
         ? "Admin login required before placing bids"
-        : "";
+        : canBid
+          ? ""
+          : `Maximum bid for this team is ${formatMoney(maxBid)}.`;
       const bidLabel = currentPlayer.currentTeamId
         ? `+${formatMoney(state.bidIncrement)}`
         : `Bid ${formatMoney(nextBid)}`;
 
       return `
-        <button class="team-bid-button" data-bid-team="${team.id}" title="${escapeAttr(title)}" ${canBid ? "" : "disabled"} type="button">
+        <button class="team-bid-button${bidLimitClass}" data-bid-team="${team.id}" title="${escapeAttr(title)}" ${canBid ? "" : "disabled"} type="button">
           ${teamLogo(team, "small")}
           <span class="team-bid-main">
             <strong>${escapeHtml(team.name)}</strong>
-            <span>Remaining ${formatMoney(remaining)}</span>
+            <span>Remaining ${formatMoney(remaining)} | Max ${formatMoney(maxBid)}</span>
           </span>
           <span class="team-bid-amount">${bidLabel}</span>
         </button>
@@ -714,7 +740,7 @@ function renderPlayerGrid() {
         <article class="player-card">
           <span class="serial-badge">${escapeHtml(playerSerial(player))}</span>
           <img class="player-card-photo" alt="${escapeAttr(player.name)}" decoding="async" loading="lazy" src="${escapeAttr(player.imageUrl)}" />
-          ${playerLeadershipImageLogo(player.id)}
+          ${playerCardTeamLogo(player)}
           <div class="player-card-header">
             <div>
               <h3>${escapeHtml(player.name)}</h3>
@@ -987,15 +1013,17 @@ function renderAuctionSettings() {
   const basePriceInput = document.getElementById("settings-base-price");
   const bidIncrementInput = document.getElementById("settings-bid-increment");
   const teamPurseInput = document.getElementById("settings-team-purse");
+  const totalPlayersInput = document.getElementById("settings-total-players");
   const addPlayerBasePriceInput = document.getElementById("new-base-price");
 
-  if (!basePriceInput || !bidIncrementInput || !teamPurseInput) {
+  if (!basePriceInput || !bidIncrementInput || !teamPurseInput || !totalPlayersInput) {
     return;
   }
 
   basePriceInput.value = String(state.defaultBasePrice ?? DEFAULT_BASE_PRICE);
   bidIncrementInput.value = String(state.bidIncrement ?? DEFAULT_BID_INCREMENT);
   teamPurseInput.value = String(getConfiguredTeamPurse());
+  totalPlayersInput.value = String(getConfiguredTotalPlayersPerTeam());
 
   if (addPlayerBasePriceInput) {
     addPlayerBasePriceInput.value = String(state.defaultBasePrice ?? DEFAULT_BASE_PRICE);
@@ -1075,13 +1103,18 @@ function playerLeadershipBadge(playerId) {
   `;
 }
 
-function playerLeadershipImageLogo(playerId) {
-  const leadership = getPlayerLeadership(playerId);
-  if (!leadership.role || !leadership.team) {
-    return "";
+function playerCardTeamLogo(player) {
+  const soldTeam = findTeam(player.soldTeamId);
+  if (soldTeam) {
+    return teamLogo(soldTeam, "player-card-team-logo");
   }
 
-  return teamLogo(leadership.team, "player-card-team-logo");
+  const leadership = getPlayerLeadership(player.id);
+  if (leadership.team) {
+    return teamLogo(leadership.team, "player-card-team-logo");
+  }
+
+  return "";
 }
 
 function playerLeadershipCell(playerId) {
@@ -1120,12 +1153,16 @@ function renderAdminCurrentLot() {
 
   root.innerHTML = `
     <div class="active-lot">
-      <img class="active-lot-photo" alt="${escapeAttr(currentPlayer.name)}" decoding="async" src="${escapeAttr(currentPlayer.imageUrl)}" />
+      <div class="active-lot-image">
+        <img class="active-lot-photo" alt="${escapeAttr(currentPlayer.name)}" decoding="async" src="${escapeAttr(currentPlayer.imageUrl)}" />
+        <span class="serial-badge active-lot-id-badge">${escapeHtml(playerSerial(currentPlayer))}</span>
+      </div>
       <div class="active-lot-info">
-        <span class="serial-badge inline">${escapeHtml(playerSerial(currentPlayer))}</span>
-        <h2>${escapeHtml(currentPlayer.name)}</h2>
+        <div class="active-lot-title-row">
+          <h2>${escapeHtml(currentPlayer.name)}</h2>
+          <strong class="activity-amount">${formatMoney(currentPlayer.currentBid)}</strong>
+        </div>
         <p>${escapeHtml(currentPlayer.role)} | ${escapeHtml(currentPlayer.battingStyle)}</p>
-        <strong class="activity-amount">${formatMoney(currentPlayer.currentBid)}</strong>
         <p>Leading: ${escapeHtml(leadingTeam?.name ?? "No bid yet")}</p>
       </div>
       <div class="lot-actions">
@@ -1133,8 +1170,143 @@ function renderAdminCurrentLot() {
         <button class="secondary-button" id="make-player-available" type="button">Stop bidding</button>
         <button class="danger-button" id="mark-unsold" type="button">Mark unsold</button>
       </div>
+      ${activeLotBidForm(currentPlayer)}
     </div>
   `;
+}
+
+function activeLotBidForm(currentPlayer) {
+  const selectedTeamId = currentPlayer.currentTeamId ?? state.teams[0]?.id ?? "";
+  const selectedTeam = findTeam(selectedTeamId);
+  const amounts = activeLotBidAmounts(currentPlayer, selectedTeam);
+  const selectedAmount = selectedActiveLotBidAmount(currentPlayer, selectedTeam, amounts);
+  const canSubmit = currentUserIsAdmin && selectedTeam && amounts.length;
+
+  return `
+    <form id="active-lot-bid-form" class="active-lot-bid-form">
+      <div class="form-grid">
+        <label>
+          Team
+          <select name="teamId" data-active-lot-bid-team ${state.teams.length ? "" : "disabled"}>
+            ${state.teams
+              .map(
+                (team) => `
+                  <option value="${escapeAttr(team.id)}" ${team.id === selectedTeamId ? "selected" : ""}>
+                    ${escapeHtml(team.name)}
+                  </option>
+                `
+              )
+              .join("")}
+          </select>
+        </label>
+        <label>
+          Amount
+          <select name="amount" data-active-lot-bid-amount ${amounts.length ? "" : "disabled"}>
+            ${activeLotBidAmountOptions(amounts, selectedAmount)}
+          </select>
+        </label>
+      </div>
+      <p class="form-hint" id="active-lot-bid-helper">
+        ${escapeHtml(activeLotBidHelperText(currentPlayer, selectedTeam, amounts))}
+      </p>
+      <button class="secondary-button full" ${canSubmit ? "" : "disabled"} type="submit">
+        Set bid
+      </button>
+    </form>
+  `;
+}
+
+function activeLotBidAmounts(player, team) {
+  if (!player || !team) {
+    return [];
+  }
+
+  const increment = bidIncrementValue();
+  const maxBid = maxActiveLotBidForTeam(team, player);
+  const minimumBid = roundUpToIncrement(player.basePrice, increment);
+  const amounts = [];
+
+  for (let amount = minimumBid; amount <= maxBid; amount += increment) {
+    amounts.push(amount);
+  }
+
+  return amounts;
+}
+
+function activeLotBidAmountOptions(amounts, selectedAmount) {
+  if (!amounts.length) {
+    return `<option value="">No valid amount</option>`;
+  }
+
+  return amounts
+    .map(
+      (amount) => `
+        <option value="${escapeAttr(amount)}" ${amount === selectedAmount ? "selected" : ""}>
+          ${escapeHtml(formatMoney(amount))}
+        </option>
+      `
+    )
+    .join("");
+}
+
+function selectedActiveLotBidAmount(player, team, amounts) {
+  if (!amounts.length) {
+    return "";
+  }
+
+  const increment = bidIncrementValue();
+  const currentBid = Number(player.currentBid || 0);
+  const preferredAmount =
+    player.currentTeamId === team?.id
+      ? currentBid
+      : currentBid + increment;
+
+  if (amounts.includes(preferredAmount)) {
+    return preferredAmount;
+  }
+
+  return amounts.find((amount) => amount >= preferredAmount) ?? amounts[amounts.length - 1];
+}
+
+function activeLotBidHelperText(player, team, amounts) {
+  const increment = bidIncrementValue();
+  if (!team) {
+    return "Choose a team before setting the bid.";
+  }
+
+  const maxBid = maxTeamBidForPlayer(team, player);
+  const cappedMaxBid = maxActiveLotBidForTeam(team, player);
+  if (!amounts.length) {
+    return `No valid bid amount is available for ${team.name}. Max allowed is ${formatMoney(cappedMaxBid)}.`;
+  }
+
+  return `Amount must be a multiple of ${formatMoney(increment)}. Max for ${team.name}: ${formatMoney(cappedMaxBid)}. Team max ${formatMoney(maxBid)}.`;
+}
+
+function updateActiveLotBidAmountOptions() {
+  const form = document.getElementById("active-lot-bid-form");
+  const player = getCurrentPlayer();
+  if (!(form instanceof HTMLFormElement) || !player) {
+    return;
+  }
+
+  const team = findTeam(namedValue(form, "teamId"));
+  const amountSelect = form.elements.namedItem("amount");
+  const submitButton = form.querySelector("button[type='submit']");
+
+  if (!(amountSelect instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  const amounts = activeLotBidAmounts(player, team);
+  const selectedAmount = selectedActiveLotBidAmount(player, team, amounts);
+  amountSelect.innerHTML = activeLotBidAmountOptions(amounts, selectedAmount);
+  amountSelect.disabled = !amounts.length;
+  setText("active-lot-bid-helper", activeLotBidHelperText(player, team, amounts));
+
+  if (submitButton instanceof HTMLButtonElement) {
+    submitButton.disabled = !currentUserIsAdmin || !team || !amounts.length;
+  }
 }
 
 function renderAdminLotMetrics() {
@@ -1438,6 +1610,213 @@ function closeStopBiddingDialog() {
   }
 }
 
+function showResetAuctionDialog({ keepViceCaptains = false } = {}) {
+  const dialog = document.getElementById("reset-auction-dialog");
+  const form = document.getElementById("reset-auction-confirm-form");
+  const retainedLabel = keepViceCaptains ? "captains and vice captains" : "captains";
+
+  if (!(form instanceof HTMLFormElement)) {
+    return;
+  }
+
+  form.dataset.keepViceCaptains = String(keepViceCaptains);
+  setText(
+    "reset-auction-confirm-copy",
+    `This will keep ${retainedLabel} and reset every other player.`
+  );
+  setText(
+    "reset-auction-confirm-detail",
+    "All bids for reset players will be deleted and team spent amounts will be recalculated."
+  );
+
+  const canShowModal =
+    typeof HTMLDialogElement !== "undefined" &&
+    dialog instanceof HTMLDialogElement &&
+    typeof dialog.showModal === "function";
+
+  if (canShowModal) {
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+  } else {
+    dialog?.setAttribute("open", "");
+  }
+
+  window.setTimeout(() => {
+    const confirmButton = form.querySelector("button[type='submit']");
+    if (confirmButton instanceof HTMLButtonElement) {
+      confirmButton.focus();
+    }
+  }, 0);
+}
+
+function closeResetAuctionDialog() {
+  const dialog = document.getElementById("reset-auction-dialog");
+  const form = document.getElementById("reset-auction-confirm-form");
+  const canCloseDialog =
+    typeof HTMLDialogElement !== "undefined" &&
+    dialog instanceof HTMLDialogElement &&
+    typeof dialog.close === "function";
+
+  if (canCloseDialog && dialog.open) {
+    dialog.close();
+  } else {
+    dialog?.removeAttribute("open");
+  }
+
+  if (form instanceof HTMLFormElement) {
+    form.reset();
+    delete form.dataset.keepViceCaptains;
+  }
+}
+
+function showSoldPlayerDialog(player, team) {
+  const dialog = document.getElementById("sold-player-dialog");
+  const summary = document.getElementById("sold-player-summary");
+
+  if (!player || !team || !summary) {
+    return;
+  }
+
+  const soldAmount = formatMoney(player.currentBid);
+  const playerImageUrl = player.imageUrl || DEFAULT_PLAYER_IMAGE_URL;
+  const jerseyNumber = player.jerseyNumber || "-";
+
+  setText("sold-player-title", `${player.name} sold`);
+  setText("sold-player-subtitle", `${team.name} | ${soldAmount}`);
+
+  summary.innerHTML = `
+    <div class="sold-player-photo-wrap">
+      <span class="serial-badge">${escapeHtml(playerSerial(player))}</span>
+      <img alt="${escapeAttr(player.name)}" decoding="async" src="${escapeAttr(playerImageUrl)}" />
+    </div>
+    <div class="sold-player-details">
+      <div class="sold-player-team">
+        ${teamLogo(team, "sold-dialog-team-logo")}
+        <div>
+          <span>Team</span>
+          <strong>${escapeHtml(team.name)}</strong>
+          <small>${escapeHtml(team.owner || "")}</small>
+        </div>
+      </div>
+      <div class="sold-player-facts">
+        <div class="sold-player-fact">
+          <span>Amount</span>
+          <strong>${soldAmount}</strong>
+        </div>
+        <div class="sold-player-fact">
+          <span>Role</span>
+          <strong>${escapeHtml(player.role)}</strong>
+        </div>
+        <div class="sold-player-fact">
+          <span>Jersey</span>
+          <strong>${escapeHtml(jerseyNumber)}</strong>
+        </div>
+        <div class="sold-player-fact">
+          <span>Status</span>
+          <strong>Sold</strong>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const canShowModal =
+    typeof HTMLDialogElement !== "undefined" &&
+    dialog instanceof HTMLDialogElement &&
+    typeof dialog.showModal === "function";
+
+  if (canShowModal) {
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+  } else {
+    dialog?.setAttribute("open", "");
+  }
+
+  clearSoldPlayerDialogTimer();
+  soldDialogTimer = window.setTimeout(closeSoldPlayerDialog, SOLD_DIALOG_AUTO_CLOSE_MS);
+}
+
+function closeSoldPlayerDialog() {
+  const dialog = document.getElementById("sold-player-dialog");
+  const canCloseDialog =
+    typeof HTMLDialogElement !== "undefined" &&
+    dialog instanceof HTMLDialogElement &&
+    typeof dialog.close === "function";
+
+  clearSoldPlayerDialogTimer();
+
+  if (canCloseDialog && dialog.open) {
+    dialog.close();
+  } else {
+    dialog?.removeAttribute("open");
+  }
+}
+
+function clearSoldPlayerDialogTimer() {
+  if (!soldDialogTimer) {
+    return;
+  }
+
+  window.clearTimeout(soldDialogTimer);
+  soldDialogTimer = null;
+}
+
+function bindSoldPlayerDialogEvents() {
+  if (soldDialogEventsBound) {
+    return;
+  }
+
+  soldDialogEventsBound = true;
+
+  const soldDialog = document.getElementById("sold-player-dialog");
+  if (
+    typeof HTMLDialogElement !== "undefined" &&
+    soldDialog instanceof HTMLDialogElement
+  ) {
+    soldDialog.addEventListener("close", clearSoldPlayerDialogTimer);
+  }
+
+  document.addEventListener("click", (event) => {
+    const target = event.target.closest("[data-sold-dialog-close]");
+    if (!target) {
+      return;
+    }
+
+    closeSoldPlayerDialog();
+  });
+}
+
+function soldPlayerAnnouncementFromStateChange(previousPlayers) {
+  const previousStatusById = new Map(
+    previousPlayers.map((player) => [player.id, player.status])
+  );
+  const newlySoldPlayers = state.players.filter((player) => {
+    const previousStatus = previousStatusById.get(player.id);
+    return previousStatus && previousStatus !== "sold" && player.status === "sold";
+  });
+
+  if (!newlySoldPlayers.length) {
+    return null;
+  }
+
+  const newlySoldPlayerIds = new Set(newlySoldPlayers.map((player) => player.id));
+  const latestSoldBid = state.bids.find((bid) => newlySoldPlayerIds.has(bid.playerId));
+  const soldPlayer =
+    newlySoldPlayers.find((player) => player.id === latestSoldBid?.playerId) ??
+    newlySoldPlayers[0];
+  const team = soldPlayer.soldTeamId ? findTeam(soldPlayer.soldTeamId) : undefined;
+
+  if (!team) {
+    return null;
+  }
+
+  return {
+    player: soldPlayer,
+    team,
+  };
+}
+
 function setPlayerEditFormValue(form, name, value) {
   const field = form.elements.namedItem(name);
   if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement) {
@@ -1541,7 +1920,7 @@ function bindAdminEvents() {
 
   document.addEventListener("click", (event) => {
     const target = event.target.closest(
-      "#logout-button, #admin-reset, #sell-player, #make-player-available, #mark-unsold, [data-admin-tab], [data-bid-team], [data-admin-start], [data-player-edit], [data-player-edit-close], [data-stop-bidding-close], [data-team-delete]"
+      "#logout-button, #admin-reset, #reset-except-captains, #sell-player, #make-player-available, #mark-unsold, [data-admin-tab], [data-bid-team], [data-admin-start], [data-player-edit], [data-player-edit-close], [data-stop-bidding-close], [data-reset-auction-close], [data-team-delete]"
     );
 
     if (!target) {
@@ -1560,6 +1939,17 @@ function bindAdminEvents() {
 
     if (target.id === "admin-reset") {
       void runAction(() => resetAuction());
+      return;
+    }
+
+    if (target.id === "reset-except-captains") {
+      const keepViceCaptainsInput = document.getElementById(
+        "reset-keep-vice-captains"
+      );
+      const keepViceCaptains =
+        keepViceCaptainsInput instanceof HTMLInputElement &&
+        keepViceCaptainsInput.checked;
+      showResetAuctionDialog({ keepViceCaptains });
       return;
     }
 
@@ -1589,6 +1979,11 @@ function bindAdminEvents() {
 
     if (target.dataset.stopBiddingClose !== undefined) {
       closeStopBiddingDialog();
+      return;
+    }
+
+    if (target.dataset.resetAuctionClose !== undefined) {
+      closeResetAuctionDialog();
       return;
     }
 
@@ -1622,6 +2017,14 @@ function bindAdminEvents() {
 
   document.addEventListener("change", (event) => {
     const input = event.target;
+    if (
+      input instanceof HTMLSelectElement &&
+      input.dataset.activeLotBidTeam !== undefined
+    ) {
+      updateActiveLotBidAmountOptions();
+      return;
+    }
+
     if (
       !(input instanceof HTMLInputElement) ||
       input.name !== "imageFile" ||
@@ -1666,6 +2069,10 @@ function bindAdminEvents() {
           defaultBasePrice: positiveNumberOf("settings-base-price", "Default base price"),
           bidIncrement: positiveNumberOf("settings-bid-increment", "Bid increment"),
           teamPurse: positiveNumberOf("settings-team-purse", "Team purse"),
+          totalPlayersPerTeam: positiveIntegerOf(
+            "settings-total-players",
+            "Total players per team"
+          ),
         });
       });
       return;
@@ -1763,6 +2170,33 @@ function bindAdminEvents() {
       return;
     }
 
+    if (form.id === "active-lot-bid-form") {
+      event.preventDefault();
+      void runAction(async () => {
+        const currentPlayer = getCurrentPlayer();
+        if (!currentPlayer) {
+          throw new Error("No active lot selected.");
+        }
+        await setActiveLotBid(
+          currentPlayer.id,
+          namedValue(form, "teamId"),
+          nonNegativeNumberFromForm(form, "amount", "Bidding amount")
+        );
+      });
+      return;
+    }
+
+    if (form.id === "reset-auction-confirm-form") {
+      event.preventDefault();
+      void runAction(async () => {
+        await resetAuctionExceptCaptains({
+          keepViceCaptains: form.dataset.keepViceCaptains === "true",
+        });
+        closeResetAuctionDialog();
+      });
+      return;
+    }
+
     if (form.dataset.teamEditForm !== undefined) {
       event.preventDefault();
       void runAction(async () => {
@@ -1817,10 +2251,68 @@ async function resetAuction() {
   renderCurrentPage();
 }
 
-async function updateAuctionConfig({ defaultBasePrice, bidIncrement, teamPurse }) {
+async function resetAuctionExceptCaptains({ keepViceCaptains = false } = {}) {
+  if (!currentUserIsAdmin) {
+    throw new Error("Admin login required to reset auction data.");
+  }
+
+  if (supabaseClient) {
+    await rpc("reset_auction_except_captains", {
+      p_keep_vice_captains: keepViceCaptains,
+    });
+    await refreshRemoteStateAfterMutation(() =>
+      renderAfterAuctionAction({ includeTeamPurse: true })
+    );
+    return;
+  }
+
+  const retainedPlayerIds = retainedResetPlayerIds(keepViceCaptains);
+
+  state.bids = state.bids.filter((bid) => retainedPlayerIds.has(bid.playerId));
+  state.players = state.players.map((player) => {
+    if (retainedPlayerIds.has(player.id)) {
+      return player;
+    }
+
+    return {
+      ...player,
+      currentBid: player.basePrice,
+      currentTeamId: undefined,
+      soldTeamId: undefined,
+      status: "available",
+    };
+  });
+  state.teams = state.teams.map((team) => ({
+    ...team,
+    spent: retainedTeamSpend(team.id, retainedPlayerIds),
+  }));
+  state.currentPlayerId = state.players.find(
+    (player) => player.status === "in_bidding"
+  )?.id;
+
+  saveLocalState();
+  renderAfterAuctionAction({ includeTeamPurse: true });
+}
+
+async function updateAuctionConfig({
+  defaultBasePrice,
+  bidIncrement,
+  teamPurse,
+  totalPlayersPerTeam,
+}) {
   const maxSpent = Math.max(0, ...state.teams.map((team) => team.spent));
   if (teamPurse < maxSpent) {
     throw new Error(`Team purse must be at least ${formatMoney(maxSpent)}.`);
+  }
+
+  const maxRosterCount = Math.max(
+    0,
+    ...state.teams.map((team) => teamRosterPlayerIds(team.id).size)
+  );
+  if (totalPlayersPerTeam < maxRosterCount) {
+    throw new Error(
+      `Total players per team must be at least ${maxRosterCount} based on current rosters.`
+    );
   }
 
   if (supabaseClient) {
@@ -1828,6 +2320,7 @@ async function updateAuctionConfig({ defaultBasePrice, bidIncrement, teamPurse }
       p_default_base_price: defaultBasePrice,
       p_bid_increment: bidIncrement,
       p_team_purse: teamPurse,
+      p_total_players_per_team: totalPlayersPerTeam,
     });
     await refreshRemoteStateAfterMutation();
     return;
@@ -1835,6 +2328,7 @@ async function updateAuctionConfig({ defaultBasePrice, bidIncrement, teamPurse }
 
   state.defaultBasePrice = defaultBasePrice;
   state.bidIncrement = bidIncrement;
+  state.totalPlayersPerTeam = totalPlayersPerTeam;
   state.teams = state.teams.map((team) => ({
     ...team,
     purse: teamPurse,
@@ -1961,8 +2455,9 @@ async function placeBid(playerId, teamId) {
   }
 
   const nextAmount = getNextBidAmount(player);
-  if (team.purse - team.spent < nextAmount) {
-    return;
+  const maxBid = maxTeamBidForPlayer(team, player);
+  if (nextAmount > maxBid) {
+    throw new Error(`Maximum bid for ${team.name} is ${formatMoney(maxBid)}.`);
   }
 
   player.currentBid = nextAmount;
@@ -1983,7 +2478,65 @@ async function placeBid(playerId, teamId) {
   renderAfterAuctionAction({ includePlayerTable: false });
 }
 
+async function setActiveLotBid(playerId, teamId, amount) {
+  if (!currentUserIsAdmin) {
+    throw new Error("Admin login required before setting bids.");
+  }
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error("Bidding amount must be 0 or greater.");
+  }
+
+  const player = findPlayer(playerId);
+  const team = findTeam(teamId);
+
+  if (!player || player.status !== "in_bidding") {
+    throw new Error("Bid can be set only for the active lot.");
+  }
+
+  if (!team) {
+    throw new Error("Choose a bidding team.");
+  }
+
+  validateActiveLotBid(player, team, amount);
+
+  if (supabaseClient) {
+    await rpc("set_active_lot_bid", {
+      p_player_id: playerId,
+      p_team_id: teamId,
+      p_amount: amount,
+    });
+    await refreshRemoteStateAfterMutation(
+      () => renderAfterAuctionAction({ includePlayerTable: false }),
+      { includePlayerImages: false }
+    );
+    return;
+  }
+
+  player.currentBid = amount;
+  player.currentTeamId = teamId;
+  player.status = "in_bidding";
+  state.currentPlayerId = playerId;
+
+  state.bids.unshift({
+    id: makeId("bid"),
+    playerId,
+    teamId,
+    amount,
+    createdAt: new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  });
+
+  saveLocalState();
+  renderAfterAuctionAction({ includePlayerTable: false });
+}
+
 async function sellPlayer(playerId) {
+  const player = findPlayer(playerId);
+  const team = player?.currentTeamId ? findTeam(player.currentTeamId) : undefined;
+
   if (supabaseClient) {
     await rpc("sell_player", { p_player_id: playerId });
     await refreshRemoteStateAfterMutation(
@@ -1993,16 +2546,11 @@ async function sellPlayer(playerId) {
     return;
   }
 
-  const player = findPlayer(playerId);
-  if (!player?.currentTeamId) {
+  if (!player?.currentTeamId || !team) {
     return;
   }
 
-  const team = findTeam(player.currentTeamId);
-  if (team) {
-    team.spent += player.currentBid;
-  }
-
+  team.spent += player.currentBid;
   player.soldTeamId = player.currentTeamId;
   player.status = "sold";
   advanceToNextPlayer();
@@ -2389,6 +2937,118 @@ function getConfiguredTeamPurse() {
   return state.teams[0]?.purse ?? DEFAULT_TEAM_PURSE;
 }
 
+function getConfiguredTotalPlayersPerTeam() {
+  const totalPlayers = Number(
+    state.totalPlayersPerTeam ?? DEFAULT_TOTAL_PLAYERS_PER_TEAM
+  );
+  return Number.isFinite(totalPlayers) && totalPlayers > 0
+    ? totalPlayers
+    : DEFAULT_TOTAL_PLAYERS_PER_TEAM;
+}
+
+function retainedResetPlayerIds(keepViceCaptains) {
+  const ids = new Set();
+
+  state.teams.forEach((team) => {
+    if (team.captainPlayerId) {
+      ids.add(team.captainPlayerId);
+    }
+    if (keepViceCaptains && team.viceCaptainPlayerId) {
+      ids.add(team.viceCaptainPlayerId);
+    }
+  });
+
+  return ids;
+}
+
+function retainedTeamSpend(teamId, retainedPlayerIds) {
+  return state.players
+    .filter(
+      (player) =>
+        retainedPlayerIds.has(player.id) &&
+        player.status === "sold" &&
+        player.soldTeamId === teamId
+    )
+    .reduce((sum, player) => sum + Number(player.currentBid || 0), 0);
+}
+
+function teamRosterPlayerIds(teamId, options = {}) {
+  const ids = new Set();
+
+  state.players.forEach((player) => {
+    const assignedTeamId =
+      options.bidPlayerId === player.id
+        ? options.bidTeamId
+        : playerRosterTeamId(player);
+
+    if (assignedTeamId === teamId) {
+      ids.add(player.id);
+    }
+  });
+
+  return ids;
+}
+
+function teamRosterCountAfterBid(team, player) {
+  return teamRosterPlayerIds(team.id, {
+    bidPlayerId: player.id,
+    bidTeamId: team.id,
+  }).size;
+}
+
+function maxTeamBidForPlayer(team, player) {
+  const totalPlayers = getConfiguredTotalPlayersPerTeam();
+  const rosterCountAfterBid = teamRosterCountAfterBid(team, player);
+
+  if (rosterCountAfterBid > totalPlayers) {
+    return 0;
+  }
+
+  const requiredPlayersAfterBid = totalPlayers - rosterCountAfterBid;
+  const reserveAmount =
+    requiredPlayersAfterBid * Number(state.defaultBasePrice ?? DEFAULT_BASE_PRICE);
+
+  return Math.max(0, team.purse - team.spent - reserveAmount);
+}
+
+function maxActiveLotBidForTeam(team, player) {
+  return Math.min(maxTeamBidForPlayer(team, player), ACTIVE_LOT_BID_AMOUNT_CAP);
+}
+
+function validateActiveLotBid(player, team, amount) {
+  const increment = bidIncrementValue();
+  const minimumBid = roundUpToIncrement(player.basePrice, increment);
+  const maxBid = maxActiveLotBidForTeam(team, player);
+
+  if (!isMultipleOfIncrement(amount, increment)) {
+    throw new Error(`Bidding amount must be a multiple of ${formatMoney(increment)}.`);
+  }
+
+  if (amount < minimumBid) {
+    throw new Error(`Bidding amount must be at least ${formatMoney(minimumBid)}.`);
+  }
+
+  if (amount > maxBid) {
+    throw new Error(`Maximum bid for ${team.name} is ${formatMoney(maxBid)}.`);
+  }
+}
+
+function bidIncrementValue() {
+  const increment = Number(state.bidIncrement ?? DEFAULT_BID_INCREMENT);
+  return Number.isFinite(increment) && increment > 0
+    ? increment
+    : DEFAULT_BID_INCREMENT;
+}
+
+function roundUpToIncrement(value, increment) {
+  return Math.ceil(Number(value || 0) / increment) * increment;
+}
+
+function isMultipleOfIncrement(value, increment) {
+  const ratio = Number(value) / increment;
+  return Number.isFinite(ratio) && Math.abs(ratio - Math.round(ratio)) < 0.000001;
+}
+
 function assertTeamCanBeDeleted(teamId) {
   if (state.teams.length <= 1) {
     throw new Error("At least one team is required.");
@@ -2654,10 +3314,26 @@ function positiveNumberOf(id, label) {
   return value;
 }
 
+function positiveIntegerOf(id, label) {
+  const value = Number(valueOf(id));
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a whole number greater than 0.`);
+  }
+  return value;
+}
+
 function positiveNumberFromForm(form, name, label) {
   const value = Number(namedValue(form, name));
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(`${label} must be greater than 0.`);
+  }
+  return value;
+}
+
+function nonNegativeNumberFromForm(form, name, label) {
+  const value = Number(namedValue(form, name));
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} must be 0 or greater.`);
   }
   return value;
 }
@@ -2671,6 +3347,9 @@ function normalizeAuctionState(next) {
     ...next,
     bidIncrement: Number(next.bidIncrement ?? DEFAULT_BID_INCREMENT),
     defaultBasePrice: Number(next.defaultBasePrice ?? DEFAULT_BASE_PRICE),
+    totalPlayersPerTeam: Number(
+      next.totalPlayersPerTeam ?? DEFAULT_TOTAL_PLAYERS_PER_TEAM
+    ),
     teams: Array.isArray(next.teams) ? next.teams : clone(seedState.teams),
     players: Array.isArray(next.players)
       ? next.players.map(normalizePlayer)

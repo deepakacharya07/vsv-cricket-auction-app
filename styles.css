@@ -22,7 +22,7 @@
 body {
   background:
     linear-gradient(rgb(7 20 17 / 56%), rgb(7 20 17 / 44%)),
-    url("public/cricket-ground-1.png") center / cover fixed no-repeat,
+    url("public/cricket-ground-1.jpg") center / cover fixed no-repeat,
     var(--paper);
   color: var(--ink);
   font-family:
@@ -93,7 +93,7 @@ img {
 
 .brand-mark {
   align-items: center;
-  background: white url("public/01_Vishwaparva_logo_KT.png") center / 150% auto no-repeat;
+  background: white url("public/01_Vishwaparva_logo_KT-small.png") center / 150% auto no-repeat;
   border: 0;
   border-radius: 150px;
   color: var(--muted);

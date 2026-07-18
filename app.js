@@ -560,7 +560,7 @@ function renderAuctionBoard() {
   const currentSummary = document.getElementById("current-player-summary");
   if (currentSummary) {
     if (currentPlayer) {
-      currentSummary.textContent = `${currentPlayer.role} | ${currentPlayer.battingStyle} | ${currentPlayer.bowlingStyle}`;
+      currentSummary.textContent = currentPlayer.role;
     } else {
       currentSummary.textContent = currentUserIsAdmin
         ? "Start the next player from the admin page or choose one below."
@@ -693,7 +693,7 @@ function renderTeamBidButtons(currentPlayer) {
   const markup = state.teams
     .map((team) => {
       const remaining = team.purse - team.spent;
-      const memberCount = teamRosterPlayerIds(team.id).size;
+      const memberCount = soldTeamMemberCount(team.id);
       const totalPlayers = getConfiguredTotalPlayersPerTeam();
       const nextBid = getNextBidAmount(currentPlayer);
       const maxBid = maxTeamBidForPlayer(team, currentPlayer);
@@ -1171,7 +1171,7 @@ function renderAdminCurrentLot() {
           <h2>${escapeHtml(currentPlayer.name)}</h2>
           <strong class="activity-amount">${formatMoney(currentPlayer.currentBid)}</strong>
         </div>
-        <p>${escapeHtml(currentPlayer.role)} | ${escapeHtml(currentPlayer.battingStyle)}</p>
+        <p>${escapeHtml(currentPlayer.role)}</p>
         <p>Leading: ${escapeHtml(leadingTeam?.name ?? "No bid yet")}</p>
       </div>
       <div class="lot-actions">
@@ -3077,6 +3077,12 @@ function retainedTeamSpend(teamId, retainedPlayerIds) {
         player.soldTeamId === teamId
     )
     .reduce((sum, player) => sum + Number(player.currentBid || 0), 0);
+}
+
+function soldTeamMemberCount(teamId) {
+  return state.players.filter(
+    (player) => player.status === "sold" && player.soldTeamId === teamId
+  ).length;
 }
 
 function teamRosterPlayerIds(teamId, options = {}) {

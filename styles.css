@@ -670,6 +670,32 @@ img {
   white-space: nowrap;
 }
 
+.team-bid-main .team-bid-title {
+  align-items: baseline;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.team-bid-title .team-bid-team-name {
+  color: inherit;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-bid-title .team-bid-captain {
+  color: var(--muted);
+  flex: 1 1 auto;
+  font-size: 0.95rem;
+  font-weight: 900;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .team-bid-main span,
 .team-card p,
 .player-card p,

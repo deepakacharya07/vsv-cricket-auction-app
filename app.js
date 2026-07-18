@@ -692,6 +692,7 @@ function renderTeamBidButtons(currentPlayer) {
       const remaining = team.purse - team.spent;
       const nextBid = getNextBidAmount(currentPlayer);
       const maxBid = maxTeamBidForPlayer(team, currentPlayer);
+      const captainName = teamCaptainName(team);
       const isAtMaxBid = nextBid > maxBid;
       const isNearMaxBid =
         !isAtMaxBid && maxBid - nextBid <= Number(state.bidIncrement ?? DEFAULT_BID_INCREMENT);
@@ -714,8 +715,11 @@ function renderTeamBidButtons(currentPlayer) {
         <button class="team-bid-button${bidLimitClass}" data-bid-team="${team.id}" title="${escapeAttr(title)}" ${canBid ? "" : "disabled"} type="button">
           ${teamLogo(team, "small")}
           <span class="team-bid-main">
-            <strong>${escapeHtml(team.name)}</strong>
-            <span>Remaining ${formatMoney(remaining)} | Max ${formatMoney(maxBid)}</span>
+            <strong class="team-bid-title">
+              <span class="team-bid-team-name">${escapeHtml(team.name)}</span>
+              ${captainName ? `<span class="team-bid-captain">C: ${escapeHtml(captainName)}</span>` : ""}
+            </strong>
+            <span class="team-bid-meta">Remaining ${formatMoney(remaining)} | Max ${formatMoney(maxBid)}</span>
           </span>
           <span class="team-bid-amount">${bidLabel}</span>
         </button>
@@ -2854,6 +2858,11 @@ function teamLogo(team, size = "") {
       }
     </span>
   `;
+}
+
+function teamCaptainName(team) {
+  const captain = team.captainPlayerId ? findPlayer(team.captainPlayerId) : undefined;
+  return captain?.name ?? "";
 }
 
 function teamInitials(name) {

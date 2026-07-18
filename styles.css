@@ -517,6 +517,17 @@ img {
   transform: translateY(-1px);
 }
 
+.team-bid-button:disabled:not(.bid-limit-near):not(.bid-limit-reached) {
+  cursor: default;
+  opacity: 1;
+}
+
+.team-bid-button:disabled:not(.bid-limit-near):not(.bid-limit-reached):hover {
+  background: var(--panel);
+  border-color: var(--line);
+  transform: none;
+}
+
 .team-bid-button.bid-limit-near {
   background: #fff1a6;
   border-color: #d99b16;
@@ -1006,6 +1017,11 @@ img {
 
 .status-unsold {
   background: var(--danger);
+  color: white;
+}
+
+.status-not_playing {
+  background: #4b5563;
   color: white;
 }
 

@@ -77,7 +77,7 @@ create table if not exists public.players (
   current_team_id uuid references public.teams(id),
   sold_team_id uuid references public.teams(id),
   status text not null default 'available' check (
-    status in ('available', 'in_bidding', 'sold', 'unsold')
+    status in ('available', 'in_bidding', 'sold', 'unsold', 'not_playing')
   ),
   image_url text not null,
   created_at timestamptz not null default now()
@@ -272,6 +272,7 @@ end;
 $$;
 
 drop function if exists public.add_player(text, text, text, text, integer, numeric, text);
+drop function if exists public.add_player(text, text, text, text, integer, numeric, text, text, text);
 
 create or replace function public.add_player(
   p_name text,
@@ -282,7 +283,8 @@ create or replace function public.add_player(
   p_base_price numeric,
   p_image_url text,
   p_contact text default null,
-  p_jersey_number text default null
+  p_jersey_number text default null,
+  p_status text default 'available'
 )
 returns uuid
 language plpgsql
@@ -292,8 +294,14 @@ as $$
 declare
   v_player_id uuid;
   v_next_player_id integer;
+  v_status text;
 begin
   perform public.require_admin();
+
+  v_status := coalesce(nullif(p_status, ''), 'available');
+  if v_status not in ('available', 'not_playing') then
+    raise exception 'New players can only be available or not playing';
+  end if;
 
   lock table public.players in exclusive mode;
 
@@ -327,7 +335,7 @@ begin
     p_image_url,
     nullif(p_contact, ''),
     nullif(p_jersey_number, ''),
-    'available'
+    v_status
   )
   returning id into v_player_id;
 
@@ -336,6 +344,7 @@ end;
 $$;
 
 drop function if exists public.update_player(uuid, text, text, text, text, integer, numeric, text);
+drop function if exists public.update_player(uuid, text, text, text, text, integer, numeric, text, text, text);
 
 create or replace function public.update_player(
   p_player_id uuid,
@@ -347,13 +356,17 @@ create or replace function public.update_player(
   p_base_price numeric,
   p_image_url text,
   p_contact text default null,
-  p_jersey_number text default null
+  p_jersey_number text default null,
+  p_status text default null
 )
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_player public.players%rowtype;
+  v_status text;
 begin
   perform public.require_admin();
 
@@ -369,6 +382,29 @@ begin
     raise exception 'Base price cannot be negative';
   end if;
 
+  select * into v_player
+  from public.players
+  where id = p_player_id
+  for update;
+
+  if not found then
+    raise exception 'Player not found';
+  end if;
+
+  v_status := coalesce(nullif(p_status, ''), v_player.status);
+  if v_status not in ('available', 'in_bidding', 'sold', 'unsold', 'not_playing') then
+    raise exception 'Invalid player status';
+  end if;
+
+  if v_player.status in ('in_bidding', 'sold') and v_status <> v_player.status then
+    raise exception 'Use auction controls to change active or sold player status';
+  end if;
+
+  if v_player.status not in ('in_bidding', 'sold')
+     and v_status not in ('available', 'not_playing', v_player.status) then
+    raise exception 'Player status can only be set to available or not playing from the player form';
+  end if;
+
   update public.players
   set name = p_name,
       role = p_role,
@@ -379,15 +415,21 @@ begin
       image_url = p_image_url,
       contact = nullif(p_contact, ''),
       jersey_number = nullif(p_jersey_number, ''),
+      status = v_status,
+      current_team_id = case
+        when v_status in ('available', 'not_playing') then null
+        else current_team_id
+      end,
+      sold_team_id = case
+        when v_status in ('available', 'not_playing') then null
+        else sold_team_id
+      end,
       current_bid = case
+        when v_status in ('available', 'not_playing') then p_base_price
         when current_team_id is null and status <> 'sold' then p_base_price
         else greatest(current_bid, p_base_price)
       end
   where id = p_player_id;
-
-  if not found then
-    raise exception 'Player not found';
-  end if;
 end;
 $$;
 
@@ -402,9 +444,9 @@ begin
 
   if not exists (
     select 1 from public.players
-    where id = p_player_id and status <> 'sold'
+    where id = p_player_id and status = 'available'
   ) then
-    raise exception 'Player is not available to start';
+    raise exception 'Only available players can be started';
   end if;
 
   update public.players
@@ -1053,7 +1095,8 @@ begin
     select 1
     from retained_players r
     where r.player_id = p.id
-  );
+  )
+    and p.status <> 'not_playing';
 
   with retained_players as (
     select captain_player_id as player_id
@@ -1139,8 +1182,8 @@ grant select on public.admin_users to authenticated;
 
 revoke execute on function public.place_bid(uuid, uuid) from public;
 revoke execute on function public.set_active_lot_bid(uuid, uuid, numeric) from public;
-revoke execute on function public.add_player(text, text, text, text, integer, numeric, text, text, text) from public;
-revoke execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text, text, text) from public;
+revoke execute on function public.add_player(text, text, text, text, integer, numeric, text, text, text, text) from public;
+revoke execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text, text, text, text) from public;
 revoke execute on function public.start_player(uuid) from public;
 revoke execute on function public.sell_player(uuid) from public;
 revoke execute on function public.mark_unsold(uuid) from public;
@@ -1155,8 +1198,8 @@ revoke execute on function public.reset_demo_data() from public;
 
 grant execute on function public.place_bid(uuid, uuid) to authenticated;
 grant execute on function public.set_active_lot_bid(uuid, uuid, numeric) to authenticated;
-grant execute on function public.add_player(text, text, text, text, integer, numeric, text, text, text) to authenticated;
-grant execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text, text, text) to authenticated;
+grant execute on function public.add_player(text, text, text, text, integer, numeric, text, text, text, text) to authenticated;
+grant execute on function public.update_player(uuid, text, text, text, text, integer, numeric, text, text, text, text) to authenticated;
 grant execute on function public.start_player(uuid) to authenticated;
 grant execute on function public.sell_player(uuid) to authenticated;
 grant execute on function public.mark_unsold(uuid) to authenticated;

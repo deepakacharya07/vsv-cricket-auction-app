@@ -17,6 +17,9 @@ const DEFAULT_PLAYER_IMAGE_URL =
 const PLAYER_SELECT_BASE =
   "id, player_id, name, role, batting_style, bowling_style, age, contact, jersey_number, base_price, current_bid, current_team_id, sold_team_id, status, created_at";
 const PLAYER_SELECT_WITH_IMAGE = `${PLAYER_SELECT_BASE}, image_url`;
+const PLAYER_STATUSES = ["available", "in_bidding", "sold", "unsold", "not_playing"];
+const PLAYER_STATUS_EDITABLE_OPTIONS = ["available", "not_playing"];
+const PLAYER_STATUS_FORM_MUTABLE_STATUSES = ["available", "unsold", "not_playing"];
 const DEMO_ADMIN = {
   email: "admin@vsvauction.local",
   password: "admin123",
@@ -690,6 +693,8 @@ function renderTeamBidButtons(currentPlayer) {
   const markup = state.teams
     .map((team) => {
       const remaining = team.purse - team.spent;
+      const memberCount = teamRosterPlayerIds(team.id).size;
+      const totalPlayers = getConfiguredTotalPlayersPerTeam();
       const nextBid = getNextBidAmount(currentPlayer);
       const maxBid = maxTeamBidForPlayer(team, currentPlayer);
       const captainName = teamCaptainName(team);
@@ -719,7 +724,7 @@ function renderTeamBidButtons(currentPlayer) {
               <span class="team-bid-team-name">${escapeHtml(team.name)}</span>
               ${captainName ? `<span class="team-bid-captain">C: ${escapeHtml(captainName)}</span>` : ""}
             </strong>
-            <span class="team-bid-meta">Remaining ${formatMoney(remaining)} | Max ${formatMoney(maxBid)}</span>
+            <span class="team-bid-meta">Members ${memberCount}/${totalPlayers} | Remaining ${formatMoney(remaining)} | Max ${formatMoney(maxBid)}</span>
           </span>
           <span class="team-bid-amount">${bidLabel}</span>
         </button>
@@ -1352,14 +1357,17 @@ function orderAdminAuctionPlayers(players) {
   const unsold = sortPlayersByAdminRandomOrder(
     players.filter((player) => player.status === "unsold")
   );
+  const notPlaying = sortPlayersById(
+    players.filter((player) => player.status === "not_playing")
+  );
   const otherStatuses = sortPlayersByAdminRandomOrder(
     players.filter(
       (player) =>
-        !["in_bidding", "available", "sold", "unsold"].includes(player.status)
+        !["in_bidding", "available", "sold", "unsold", "not_playing"].includes(player.status)
     )
   );
 
-  return [...inBidding, ...available, ...sold, ...unsold, ...otherStatuses];
+  return [...inBidding, ...available, ...sold, ...unsold, ...notPlaying, ...otherStatuses];
 }
 
 function filterAdminPlayers(players, query) {
@@ -1460,7 +1468,7 @@ function renderAdminPlayerRows(players, emptyMessage) {
               <span class="mobile-field leadership-cell" data-label="Captain">${playerLeadershipCell(player.id)}</span>
               <span class="row-actions">
                 <button class="secondary-button compact-button" data-player-edit="${escapeAttr(player.id)}" type="button">Edit</button>
-                <button class="secondary-button compact-button" data-admin-start="${escapeAttr(player.id)}" ${player.status === "sold" ? "disabled" : ""} type="button">Start</button>
+                <button class="secondary-button compact-button" data-admin-start="${escapeAttr(player.id)}" ${player.status === "available" ? "" : "disabled"} type="button">Start</button>
               </span>
             </div>
           `
@@ -1485,6 +1493,7 @@ function showPlayerEditDialog(playerId) {
   setPlayerEditFormValue(form, "name", player.name);
   setPlayerEditFormValue(form, "role", player.role);
   setPlayerEditFormValue(form, "basePrice", player.basePrice);
+  populatePlayerStatusSelect(form, player.status);
   setPlayerEditFormValue(form, "age", player.age);
   setPlayerEditFormValue(form, "battingStyle", player.battingStyle);
   setPlayerEditFormValue(form, "bowlingStyle", player.bowlingStyle);
@@ -1511,7 +1520,7 @@ function showPlayerEditDialog(playerId) {
   setText("player-edit-preview-name", player.name);
   setText(
     "player-edit-status",
-    `${player.status.replace("_", " ")} | Current bid ${formatMoney(player.currentBid)}`
+    `${playerStatusLabel(player.status)} | Current bid ${formatMoney(player.currentBid)}`
   );
 
   const canShowModal =
@@ -1828,6 +1837,32 @@ function setPlayerEditFormValue(form, name, value) {
   }
 }
 
+function populatePlayerStatusSelect(form, status) {
+  const field = form.elements.namedItem("status");
+  if (!(field instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  const normalizedStatus = normalizePlayerStatus(status);
+  const canChangeStatus = PLAYER_STATUS_FORM_MUTABLE_STATUSES.includes(normalizedStatus);
+  const options = canChangeStatus
+    ? [...new Set([normalizedStatus, ...PLAYER_STATUS_EDITABLE_OPTIONS])]
+    : [normalizedStatus];
+
+  field.innerHTML = options
+    .map(
+      (option) => `
+        <option value="${escapeAttr(option)}">${escapeHtml(playerStatusLabel(option))}</option>
+      `
+    )
+    .join("");
+  field.value = normalizedStatus;
+  field.disabled = !canChangeStatus;
+  field.title = canChangeStatus
+    ? ""
+    : "Use auction controls to change this player's current auction status.";
+}
+
 function updatePlayerEditImagePreview(input) {
   const file = input.files?.[0];
   const previewImage = document.getElementById("player-edit-image-preview");
@@ -2088,6 +2123,7 @@ function bindAdminEvents() {
         await addPlayer({
           name: valueOf("new-name"),
           role: valueOf("new-role"),
+          status: valueOf("new-status"),
           basePrice: Number(valueOf("new-base-price")),
           battingStyle: valueOf("new-batting"),
           bowlingStyle: valueOf("new-bowling"),
@@ -2108,6 +2144,7 @@ function bindAdminEvents() {
           state.defaultBasePrice ?? DEFAULT_BASE_PRICE
         );
         document.getElementById("new-age").value = "24";
+        document.getElementById("new-status").value = "available";
       });
       return;
     }
@@ -2132,6 +2169,7 @@ function bindAdminEvents() {
         await updatePlayer(form.dataset.playerId, {
           name: namedValue(form, "name"),
           role: namedValue(form, "role"),
+          status: namedValue(form, "status"),
           basePrice: positiveNumberFromForm(form, "basePrice", "Base price"),
           age: positiveNumberFromForm(form, "age", "Age"),
           battingStyle: namedValue(form, "battingStyle"),
@@ -2278,6 +2316,15 @@ async function resetAuctionExceptCaptains({ keepViceCaptains = false } = {}) {
       return player;
     }
 
+    if (player.status === "not_playing") {
+      return {
+        ...player,
+        currentTeamId: undefined,
+        soldTeamId: undefined,
+        currentBid: player.basePrice,
+      };
+    }
+
     return {
       ...player,
       currentBid: player.basePrice,
@@ -2411,6 +2458,11 @@ async function startPlayer(playerId) {
       includePlayerImages: false,
     });
     return;
+  }
+
+  const playerToStart = findPlayer(playerId);
+  if (!playerToStart || playerToStart.status !== "available") {
+    throw new Error("Only available players can be started.");
   }
 
   state.players = state.players.map((player) => {
@@ -2627,6 +2679,7 @@ async function addPlayer(player, leadership = {}) {
       p_image_url: player.imageUrl,
       p_contact: player.contact,
       p_jersey_number: player.jerseyNumber,
+      p_status: normalizeEditablePlayerStatus(player.status),
     });
     await updatePlayerLeadership(playerId, leadership);
     await refreshRemoteStateAfterMutation();
@@ -2638,7 +2691,7 @@ async function addPlayer(player, leadership = {}) {
     id: makeId("player"),
     playerNumber: nextPlayerNumber(),
     currentBid: player.basePrice,
-    status: "available",
+    status: normalizeEditablePlayerStatus(player.status),
   };
 
   state.players.push(newPlayer);
@@ -2660,6 +2713,7 @@ async function updatePlayer(playerId, player, leadership = {}, options = {}) {
       p_image_url: player.imageUrl,
       p_contact: player.contact,
       p_jersey_number: player.jerseyNumber,
+      p_status: normalizePlayerStatus(player.status),
     });
     await updatePlayerLeadership(playerId, leadership);
     await refreshRemoteStateAfterMutation(
@@ -2673,14 +2727,20 @@ async function updatePlayer(playerId, player, leadership = {}, options = {}) {
       return existingPlayer;
     }
 
-    const nextCurrentBid =
-      existingPlayer.currentTeamId || existingPlayer.status === "sold"
+    const nextStatus = nextEditablePlayerStatus(existingPlayer, player.status);
+    const clearsAuctionState = ["available", "not_playing"].includes(nextStatus);
+    const nextCurrentBid = clearsAuctionState
+      ? player.basePrice
+      : existingPlayer.currentTeamId || existingPlayer.status === "sold"
         ? Math.max(existingPlayer.currentBid, player.basePrice)
         : player.basePrice;
 
     return {
       ...existingPlayer,
       ...player,
+      status: nextStatus,
+      currentTeamId: clearsAuctionState ? undefined : existingPlayer.currentTeamId,
+      soldTeamId: clearsAuctionState ? undefined : existingPlayer.soldTeamId,
       currentBid: nextCurrentBid,
     };
   });
@@ -2890,9 +2950,47 @@ function info(label, value) {
 }
 
 function statusBadge(status) {
-  return `<span class="status-badge status-${escapeAttr(status)}">${escapeHtml(
-    status.replace("_", " ")
+  const normalizedStatus = normalizePlayerStatus(status);
+  return `<span class="status-badge status-${escapeAttr(normalizedStatus)}">${escapeHtml(
+    playerStatusLabel(normalizedStatus)
   )}</span>`;
+}
+
+function playerStatusLabel(status) {
+  const labels = {
+    available: "Available",
+    in_bidding: "In bidding",
+    sold: "Sold",
+    unsold: "Unsold",
+    not_playing: "Not playing",
+  };
+
+  return labels[status] ?? String(status || "").replace("_", " ");
+}
+
+function normalizePlayerStatus(status) {
+  return PLAYER_STATUSES.includes(status) ? status : "available";
+}
+
+function normalizeEditablePlayerStatus(status) {
+  const normalizedStatus = normalizePlayerStatus(status);
+  return PLAYER_STATUS_EDITABLE_OPTIONS.includes(normalizedStatus)
+    ? normalizedStatus
+    : "available";
+}
+
+function nextEditablePlayerStatus(existingPlayer, requestedStatus) {
+  const normalizedStatus = normalizePlayerStatus(requestedStatus);
+  const existingStatus = normalizePlayerStatus(existingPlayer.status);
+  if (PLAYER_STATUS_FORM_MUTABLE_STATUSES.includes(existingStatus)) {
+    if (normalizedStatus === existingStatus) {
+      return existingStatus;
+    }
+
+    return normalizeEditablePlayerStatus(normalizedStatus);
+  }
+
+  return existingStatus;
 }
 
 function getCurrentPlayer() {
@@ -3154,7 +3252,7 @@ function dbBidToState(row) {
 }
 
 function formatMoney(value) {
-  return `INR ${Number(value || 0).toLocaleString("en-IN", {
+  return `₹ ${Number(value || 0).toLocaleString("en-IN", {
     maximumFractionDigits: 2,
   })}`;
 }
@@ -3372,6 +3470,7 @@ function normalizePlayer(player) {
     ...player,
     contact: player.contact ?? "",
     jerseyNumber: player.jerseyNumber ?? "",
+    status: normalizePlayerStatus(player.status),
   };
 }
 

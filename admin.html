@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Auction Admin | VSV Cricket Auction</title>
     <link rel="icon" href="public/favicon.svg" />
-    <link rel="stylesheet" href="styles.css?v=20260718-02" />
+    <link rel="stylesheet" href="styles.css?v=20260718-04" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js?v=20260718-02"></script>
-    <script src="app.js?v=20260718-02" defer></script>
+    <script src="supabase-config.js?v=20260718-04"></script>
+    <script src="app.js?v=20260718-04" defer></script>
   </head>
   <body data-page="admin">
     <header class="topbar">
@@ -78,11 +78,11 @@
             <div class="lot-metrics">
               <article class="metric compact">
                 <span>Base price</span>
-                <strong id="admin-current-base">INR 0</strong>
+                <strong id="admin-current-base">₹ 0</strong>
               </article>
               <article class="metric compact">
                 <span>Current bid</span>
-                <strong id="admin-current-bid">INR 0</strong>
+                <strong id="admin-current-bid">₹ 0</strong>
               </article>
               <article class="metric compact">
                 <span>Leading team</span>
@@ -187,6 +187,13 @@
                     <option>Bowler</option>
                     <option>All-rounder</option>
                     <option>Wicket keeper</option>
+                  </select>
+                </label>
+                <label>
+                  Auction status
+                  <select id="new-status">
+                    <option value="available">Available</option>
+                    <option value="not_playing">Not playing</option>
                   </select>
                 </label>
                 <label>
@@ -295,6 +302,10 @@
           <label>
             Base price
             <input min="1" name="basePrice" required type="number" />
+          </label>
+          <label>
+            Auction status
+            <select name="status"></select>
           </label>
         </div>
 

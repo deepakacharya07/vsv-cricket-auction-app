@@ -45,7 +45,8 @@ begin
     select 1
     from retained_players r
     where r.player_id = p.id
-  );
+  )
+    and p.status <> 'not_playing';
 
   with retained_players as (
     select captain_player_id as player_id

@@ -25,6 +25,81 @@ const DEMO_ADMIN = {
   password: "admin123",
 };
 
+const womensCricketTeams = [
+  {
+    name: "Warrior Queens",
+    shortName: "WQ",
+    color: "#9a4815",
+    logoUrl: "public/womens-warrior-queens.png",
+    players: [
+      { name: "Annapoorna", leadership: "Captain" },
+      { name: "Manjula Sunil", leadership: "Vice Captain" },
+      { name: "Sahana", leadership: "" },
+      { name: "Rithiksha", leadership: "" },
+      { name: "Nisha Naveen", leadership: "" },
+      { name: "Vamshika", leadership: "" },
+      { name: "Rashmi Sadashiva", leadership: "" },
+      { name: "Keerthi Vaishak", leadership: "" },
+      { name: "Vrusha Prasanna", leadership: "" },
+      { name: "Rajalakshmi", leadership: "" },
+    ],
+  },
+  {
+    name: "Royal Queens",
+    shortName: "RQ",
+    color: "#3867a6",
+    logoUrl: "public/womens-royal-queens.png",
+    players: [
+      { name: "Lavanya Gowrish", leadership: "Captain" },
+      { name: "Shreenidhi", leadership: "Vice Captain" },
+      { name: "Keerthana Ramesh", leadership: "" },
+      { name: "Nisha Varun", leadership: "" },
+      { name: "Seema Santhosh", leadership: "" },
+      { name: "Daksha", leadership: "" },
+      { name: "Poorvi", leadership: "" },
+      { name: "Shilpa Shivaprasad", leadership: "" },
+      { name: "Rashmi Charan", leadership: "" },
+      { name: "Yogitha Trivikram", leadership: "" },
+    ],
+  },
+  {
+    name: "Thunder Queens",
+    shortName: "TQ",
+    color: "#3158a8",
+    logoUrl: "public/womens-thunder-queens.png",
+    players: [
+      { name: "Monica Naveen", leadership: "Captain" },
+      { name: "Deepika Nithin", leadership: "Vice Captain" },
+      { name: "Hansika S", leadership: "" },
+      { name: "Keerthi Umesh", leadership: "" },
+      { name: "Vyshali", leadership: "" },
+      { name: "Jahnavi Ganesh", leadership: "" },
+      { name: "Vandana Mohan", leadership: "" },
+      { name: "Soumya Karthik", leadership: "" },
+      { name: "Shilpa Avinash", leadership: "" },
+      { name: "Vijayakala", leadership: "" },
+    ],
+  },
+  {
+    name: "Phoenix Queens",
+    shortName: "PQ",
+    color: "#b7791f",
+    logoUrl: "public/womens-phoenix-queens.png",
+    players: [
+      { name: "Pavana Omprakash", leadership: "Captain" },
+      { name: "Pallavi", leadership: "Vice Captain" },
+      { name: "Sowmya Lakshmesha", leadership: "" },
+      { name: "Varshini", leadership: "" },
+      { name: "Joshika", leadership: "" },
+      { name: "Gayathri Ganesh", leadership: "" },
+      { name: "Dhanya", leadership: "" },
+      { name: "Shravya", leadership: "" },
+      { name: "Deeksha", leadership: "" },
+      { name: "Kanchana Ananth", leadership: "" },
+    ],
+  },
+];
+
 const seedState = {
   bidIncrement: DEFAULT_BID_INCREMENT,
   defaultBasePrice: DEFAULT_BASE_PRICE,
@@ -284,10 +359,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function bootstrapApp() {
   const page = document.body.dataset.page;
+  const auctionStatePages = ["auction", "players", "teams", "admin"];
 
   await refreshAuthState();
 
-  if (page !== "login") {
+  if (auctionStatePages.includes(page)) {
     await initializeAuctionState();
   }
 
@@ -303,6 +379,10 @@ async function bootstrapApp() {
 
   if (page === "teams") {
     renderTeamsPage();
+  }
+
+  if (page === "womens-team") {
+    renderWomensTeamPage();
   }
 
   if (page === "login") {
@@ -541,6 +621,10 @@ function renderCurrentPage() {
   if (page === "teams") {
     renderTeamsPage();
   }
+
+  if (page === "womens-team") {
+    renderWomensTeamPage();
+  }
 }
 
 function renderAuctionBoard() {
@@ -600,6 +684,68 @@ function renderTeamsPage() {
   renderTeamRosterGrid();
 }
 
+function renderWomensTeamPage() {
+  const root = document.getElementById("womens-team-grid");
+
+  if (!root) {
+    return;
+  }
+
+  root.innerHTML = womensCricketTeams.map(womensTeamRosterCard).join("");
+}
+
+function womensTeamRosterCard(team) {
+  return `
+    <article class="team-roster-card womens-team-card">
+      <div class="team-roster-header">
+        <div class="team-roster-title">
+          <span class="team-logo womens-team-logo" style="--team-color: ${escapeAttr(team.color)}" aria-hidden="true">
+            ${
+              team.logoUrl
+                ? `<img alt="" src="${escapeAttr(team.logoUrl)}" />`
+                : `<span>${escapeHtml(team.shortName)}</span>`
+            }
+          </span>
+          <div>
+            <h2>${escapeHtml(team.name)}</h2>
+            <p>Players and leadership</p>
+          </div>
+        </div>
+        <span class="team-roster-count">${team.players.length}</span>
+      </div>
+
+      <div class="womens-player-table-wrap">
+        <table class="womens-player-table">
+          <thead>
+            <tr>
+              <th scope="col">Player Name</th>
+              <th scope="col">Captain / Vice Captain</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${team.players.map(womensTeamPlayerRow).join("")}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  `;
+}
+
+function womensTeamPlayerRow(player) {
+  return `
+    <tr>
+      <td>${escapeHtml(player.name)}</td>
+      <td>
+        ${
+          player.leadership
+            ? `<span class="leadership-badge womens-leadership-badge">${escapeHtml(player.leadership)}</span>`
+            : `<span class="muted-value">-</span>`
+        }
+      </td>
+    </tr>
+  `;
+}
+
 function renderTeamRosterGrid() {
   const root = document.getElementById("team-roster-grid");
   if (!root) {
@@ -634,7 +780,6 @@ function teamRosterCard(team) {
     </article>
   `;
 }
-
 function teamRosterPlayers(team) {
   return sortPlayersById(
     state.players.filter((player) => playerRosterTeamId(player) === team.id)

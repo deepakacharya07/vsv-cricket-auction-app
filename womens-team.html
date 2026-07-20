@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Player Pool | VSV Cricket Auction</title>
+    <title>Women's Team | VSV Cricket Auction</title>
     <meta
       name="description"
-      content="Player pool for the VSV Cricket Auction."
+      content="Women's cricket team players with captain and vice captain assignments."
     />
     <link rel="icon" href="public/favicon.svg" />
     <link rel="stylesheet" href="styles.css?v=20260721-04" />
@@ -14,14 +14,14 @@
     <script src="supabase-config.js?v=20260721-04"></script>
     <script src="app.js?v=20260721-04" defer></script>
   </head>
-  <body data-page="players">
+  <body data-page="womens-team">
     <header class="topbar">
       <div class="topbar-inner">
         <a class="brand" href="teams.html" aria-label="VSV Auction home">
           <span class="brand-mark" aria-hidden="true"></span>
           <span>
             <span class="eyebrow">Cricket player auction</span>
-            <strong>Player Pool</strong>
+            <strong>Women's Team</strong>
           </span>
         </a>
         <a class="header-center-logo" href="teams.html" aria-label="VSV Auction home">
@@ -29,8 +29,8 @@
         </a>
         <nav class="nav">
           <a class="nav-link" href="teams.html">Teams</a>
-          <a class="nav-link" href="womens-team.html">Women's Team</a>
-          <a class="nav-link active" href="players.html">Players</a>
+          <a class="nav-link active" href="womens-team.html">Women's Team</a>
+          <a class="nav-link" href="players.html">Players</a>
           <a class="nav-link" href="auction.html">Auction</a>
           <a class="nav-link" href="admin.html">Admin</a>
           <a class="nav-link" href="login.html">Login</a>
@@ -38,15 +38,16 @@
       </div>
     </header>
 
-    <main class="players-page">
+    <main class="teams-page womens-team-page">
       <section>
         <div class="section-heading">
           <div>
-            <h1>Player pool</h1>
-            <p>Available, sold, and unsold players for this auction.</p>
+            <h1>Women's cricket teams</h1>
+            <p>Four women's teams with captain and vice captain assignments.</p>
           </div>
         </div>
-        <div id="player-grid" class="player-grid player-pool-grid"></div>
+
+        <div id="womens-team-grid" class="team-roster-grid womens-team-grid"></div>
       </section>
     </main>
   </body>

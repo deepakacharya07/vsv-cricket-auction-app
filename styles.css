@@ -909,12 +909,12 @@ img {
   border: 1px solid var(--line-soft);
   border-radius: 0.5rem;
   margin-top: 1rem;
-  overflow-x: auto;
+  overflow: hidden;
 }
 
 .womens-player-table {
   border-collapse: collapse;
-  min-width: 24rem;
+  table-layout: fixed;
   width: 100%;
 }
 
@@ -924,6 +924,7 @@ img {
   padding: 0.8rem 0.9rem;
   text-align: left;
   vertical-align: middle;
+  overflow-wrap: anywhere;
 }
 
 .womens-player-table th {
@@ -942,7 +943,7 @@ img {
 .womens-player-table td:last-child,
 .womens-player-table th:last-child {
   text-align: right;
-  width: 13rem;
+  width: 7rem;
 }
 
 .womens-player-table tr:last-child td {
@@ -2084,6 +2085,16 @@ img {
     background: transparent;
     border-color: transparent;
     color: var(--green);
+  }
+
+  .womens-player-table th,
+  .womens-player-table td {
+    padding: 0.65rem 0.55rem;
+  }
+
+  .womens-player-table td:last-child,
+  .womens-player-table th:last-child {
+    width: 4.25rem;
   }
 
   .stage-image,

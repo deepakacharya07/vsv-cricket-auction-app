@@ -719,7 +719,7 @@ function womensTeamRosterCard(team) {
           <thead>
             <tr>
               <th scope="col">Player Name</th>
-              <th scope="col">Captain / Vice Captain</th>
+              <th scope="col"></th>
             </tr>
           </thead>
           <tbody>

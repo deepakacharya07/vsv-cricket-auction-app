@@ -32,8 +32,8 @@ const womensCricketTeams = [
     color: "#9a4815",
     logoUrl: "public/womens-warrior-queens.png",
     players: [
-      { name: "Annapoorna", leadership: "Captain" },
-      { name: "Manjula Sunil", leadership: "Vice Captain" },
+      { name: "Annapoorna", leadership: "C" },
+      { name: "Manjula Sunil", leadership: "VC" },
       { name: "Sahana", leadership: "" },
       { name: "Rithiksha", leadership: "" },
       { name: "Nisha Naveen", leadership: "" },
@@ -50,8 +50,8 @@ const womensCricketTeams = [
     color: "#3867a6",
     logoUrl: "public/womens-royal-queens.png",
     players: [
-      { name: "Lavanya Gowrish", leadership: "Captain" },
-      { name: "Shreenidhi", leadership: "Vice Captain" },
+      { name: "Lavanya Gowrish", leadership: "C" },
+      { name: "Shreenidhi", leadership: "VC" },
       { name: "Keerthana Ramesh", leadership: "" },
       { name: "Nisha Varun", leadership: "" },
       { name: "Seema Santhosh", leadership: "" },
@@ -68,8 +68,8 @@ const womensCricketTeams = [
     color: "#3158a8",
     logoUrl: "public/womens-thunder-queens.png",
     players: [
-      { name: "Monica Naveen", leadership: "Captain" },
-      { name: "Deepika Nithin", leadership: "Vice Captain" },
+      { name: "Monica Naveen", leadership: "C" },
+      { name: "Deepika Nithin", leadership: "VC" },
       { name: "Hansika S", leadership: "" },
       { name: "Keerthi Umesh", leadership: "" },
       { name: "Vyshali", leadership: "" },
@@ -86,8 +86,8 @@ const womensCricketTeams = [
     color: "#b7791f",
     logoUrl: "public/womens-phoenix-queens.png",
     players: [
-      { name: "Pavana Omprakash", leadership: "Captain" },
-      { name: "Pallavi", leadership: "Vice Captain" },
+      { name: "Pavana Omprakash", leadership: "C" },
+      { name: "Pallavi", leadership: "VC" },
       { name: "Sowmya Lakshmesha", leadership: "" },
       { name: "Varshini", leadership: "" },
       { name: "Joshika", leadership: "" },
